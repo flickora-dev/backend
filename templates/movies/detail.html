@@ -1,0 +1,336 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ movie.title }} - flickora{% endblock %}
+
+{% block content %}
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+    <div class="lg:col-span-2">
+        <div class="relative mb-8">
+            {% if movie.backdrop_url %}
+            <div class="absolute inset-0 -z-10">
+                <img src="{{ movie.backdrop_url }}" 
+                     alt="{{ movie.title }}"
+                     class="w-full h-full object-cover opacity-20 blur-sm">
+            </div>
+            {% endif %}
+            
+            <div class="flex flex-col md:flex-row gap-8 py-8">
+                <div class="flex-shrink-0">
+                    <div class="w-64 aspect-[2/3] bg-gray-800 rounded-lg overflow-hidden">
+                        {% if movie.poster_url %}
+                            <img src="{{ movie.poster_url }}" 
+                                 alt="{{ movie.title }}"
+                                 class="w-full h-full object-cover">
+                        {% else %}
+                            <div class="w-full h-full flex items-center justify-center text-gray-500">
+                                No Poster
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+                
+                <div class="flex-1">
+                    <h1 class="text-4xl font-bold mb-2">{{ movie.title }}</h1>
+                    <div class="flex flex-wrap gap-4 text-gray-400 mb-4">
+                        <span>{{ movie.year }}</span>
+                        {% if movie.runtime %}
+                            <span>{{ movie.runtime }} min</span>
+                        {% endif %}
+                        {% if movie.imdb_rating %}
+                            <span class="flex items-center gap-1">
+                                ⭐ {{ movie.imdb_rating }}/10
+                            </span>
+                        {% endif %}
+                    </div>
+                    
+                    {% if movie.genres.exists %}
+                    <div class="flex flex-wrap gap-2 mb-4">
+                        {% for genre in movie.genres.all %}
+                        <a href="{% url 'movie_list' %}?genre={{ genre.tmdb_id }}" 
+                           class="px-3 py-1 bg-blue-500 hover:bg-blue-600 rounded text-sm transition">
+                            {{ genre.name }}
+                        </a>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                    
+                    {% if movie.director %}
+                    <p class="text-lg mb-4">
+                        <span class="text-gray-400">Directed by:</span> 
+                        <span class="font-semibold">{{ movie.director }}</span>
+                    </p>
+                    {% endif %}
+                    
+                    {% if movie.plot_summary %}
+                    <div class="bg-gray-800 rounded-lg p-6 mb-6">
+                        <h3 class="font-bold text-xl mb-3">Synopsis</h3>
+                        <p class="text-gray-300 leading-relaxed">{{ movie.plot_summary }}</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div class="space-y-8">
+            <h2 class="text-3xl font-bold">AI-Generated Analysis</h2>
+            
+            {% if sections %}
+                {% for section in sections %}
+                <div class="bg-gray-800 rounded-lg p-6">
+                    <h3 class="text-2xl font-bold mb-4 text-blue-500">
+                        {{ section.get_section_type_display }}
+                    </h3>
+                    <div class="prose prose-invert max-w-none">
+                        <p class="text-gray-300 leading-relaxed whitespace-pre-line">{{ section.content }}</p>
+                    </div>
+                    <div class="mt-4 text-sm text-gray-500">
+                        Generated: {{ section.generated_at|date:"M d, Y" }} | 
+                        Word count: {{ section.word_count }}
+                    </div>
+                </div>
+                {% endfor %}
+            {% else %}
+                <div class="bg-gray-800 rounded-lg p-12 text-center">
+                    <p class="text-xl text-gray-400 mb-4">No AI analysis available yet</p>
+                    <p class="text-gray-500">Generate reports for this movie using the management command</p>
+                </div>
+            {% endif %}
+        </div>
+
+        <div class="mt-8">
+            <a href="{% url 'movie_list' %}" class="inline-block px-6 py-3 bg-gray-800 hover:bg-gray-700 rounded-lg transition">
+                ← Back to Movies
+            </a>
+        </div>
+    </div>
+
+    <div class="lg:col-span-1">
+        <div class="sticky top-4 space-y-4">
+            <div class="bg-gray-800/50 backdrop-blur-sm border border-gray-700 rounded-lg overflow-hidden">
+                <div class="p-4 border-b border-gray-700">
+                    <h3 class="text-lg font-bold flex items-center gap-2">
+                        <svg class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/>
+                        </svg>
+                        Chat with AI
+                    </h3>
+                </div>
+
+                <div class="p-4 bg-blue-500/10 border-b border-blue-500/30">
+                    <p class="text-sm text-gray-300">Hi! I'm here to help you explore this movie. Ask me anything about <span class="font-semibold">{{ movie.title }}</span>!</p>
+                </div>
+
+                <div class="p-4 space-y-3 h-[400px] overflow-y-auto scrollbar-hide" id="chat-messages" style="scrollbar-width: none; -ms-overflow-style: none;">
+                </div>
+
+                <div class="p-4 border-t border-gray-700">
+                    <form id="chat-form" class="relative">
+                        <input 
+                            type="text" 
+                            id="chat-input"
+                            placeholder="Ask about this movie..."
+                            class="w-full pl-4 pr-12 py-3 bg-gray-700/50 border border-gray-600 rounded-lg focus:outline-none focus:border-blue-500 focus:bg-gray-700 transition text-sm"
+                        >
+                        <button type="submit" class="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-blue-500 hover:bg-blue-600 rounded-lg transition">
+                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+                            </svg>
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <div class="bg-gray-800/50 backdrop-blur-sm border border-gray-700 rounded-lg p-6">
+                <h4 class="text-sm font-semibold mb-3 text-gray-400 uppercase tracking-wide">Quick Questions</h4>
+                <div class="space-y-2">
+                    <button class="w-full text-left px-4 py-3 bg-gray-700/50 hover:bg-gray-700 rounded-lg text-sm transition quick-question border border-gray-600 hover:border-blue-500">
+                        What's the meaning behind the spinning top?
+                    </button>
+                    <button class="w-full text-left px-4 py-3 bg-gray-700/50 hover:bg-gray-700 rounded-lg text-sm transition quick-question border border-gray-600 hover:border-blue-500">
+                        Explain the dream levels in this movie
+                    </button>
+                    <button class="w-full text-left px-4 py-3 bg-gray-700/50 hover:bg-gray-700 rounded-lg text-sm transition quick-question border border-gray-600 hover:border-blue-500">
+                        What are some hidden details I might have missed?
+                    </button>
+                </div>
+            </div>
+
+            <div class="bg-gray-800/50 backdrop-blur-sm border border-gray-700 rounded-lg p-6">
+                <h4 class="font-semibold mb-3 text-lg">Actions</h4>
+                <div class="space-y-2">
+                    <button class="w-full px-4 py-3 bg-gray-700/50 hover:bg-gray-700 rounded-lg flex items-center gap-3 transition border border-gray-600 hover:border-red-500 group">
+                        <svg class="w-5 h-5 group-hover:text-red-500 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/>
+                        </svg>
+                        <span>Add to Favorites</span>
+                    </button>
+                    <button class="w-full px-4 py-3 bg-gray-700/50 hover:bg-gray-700 rounded-lg flex items-center gap-3 transition border border-gray-600 hover:border-blue-500 group">
+                        <svg class="w-5 h-5 group-hover:text-blue-500 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"/>
+                        </svg>
+                        <span>Share Movie</span>
+                    </button>
+                </div>
+            </div>
+
+            <div class="bg-gray-800/50 backdrop-blur-sm border border-gray-700 rounded-lg p-6">
+                <h4 class="font-semibold mb-3 text-lg">Rate this movie</h4>
+                <div class="flex gap-2 justify-center">
+                    <button class="star-rating text-3xl text-gray-600 hover:text-yellow-400 transition hover:scale-110">★</button>
+                    <button class="star-rating text-3xl text-gray-600 hover:text-yellow-400 transition hover:scale-110">★</button>
+                    <button class="star-rating text-3xl text-gray-600 hover:text-yellow-400 transition hover:scale-110">★</button>
+                    <button class="star-rating text-3xl text-gray-600 hover:text-yellow-400 transition hover:scale-110">★</button>
+                    <button class="star-rating text-3xl text-gray-600 hover:text-yellow-400 transition hover:scale-110">★</button>
+                </div>
+            </div>
+
+            {% if movie.genres.exists %}
+            <div class="bg-gray-800/50 backdrop-blur-sm border border-gray-700 rounded-lg p-6">
+                <h4 class="font-semibold mb-4 text-lg">Similar Movies</h4>
+                <div class="space-y-3">
+                    <a href="#" class="flex gap-3 hover:bg-gray-700/50 rounded-lg p-3 transition border border-transparent hover:border-gray-600">
+                        <div class="w-16 h-24 bg-gray-700 rounded flex-shrink-0 overflow-hidden">
+                            <div class="w-full h-full bg-gradient-to-br from-gray-600 to-gray-800"></div>
+                        </div>
+                        <div class="flex-1">
+                            <p class="font-semibold text-sm mb-1">Interstellar</p>
+                            <p class="text-xs text-gray-400 mb-2">2014 • Sci-Fi</p>
+                            <div class="flex items-center gap-1 text-yellow-400 text-xs">
+                                <span>★</span>
+                                <span>8.6</span>
+                            </div>
+                        </div>
+                    </a>
+                    <a href="#" class="flex gap-3 hover:bg-gray-700/50 rounded-lg p-3 transition border border-transparent hover:border-gray-600">
+                        <div class="w-16 h-24 bg-gray-700 rounded flex-shrink-0 overflow-hidden">
+                            <div class="w-full h-full bg-gradient-to-br from-gray-600 to-gray-800"></div>
+                        </div>
+                        <div class="flex-1">
+                            <p class="font-semibold text-sm mb-1">The Matrix</p>
+                            <p class="text-xs text-gray-400 mb-2">1999 • Action</p>
+                            <div class="flex items-center gap-1 text-yellow-400 text-xs">
+                                <span>★</span>
+                                <span>8.7</span>
+                            </div>
+                        </div>
+                    </a>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const chatForm = document.getElementById('chat-form');
+    const chatInput = document.getElementById('chat-input');
+    const chatMessages = document.getElementById('chat-messages');
+    const quickQuestions = document.querySelectorAll('.quick-question');
+
+    chatMessages.style.scrollBehavior = 'smooth';
+
+    quickQuestions.forEach(btn => {
+        btn.addEventListener('click', function() {
+            chatInput.value = this.textContent.trim();
+            chatForm.dispatchEvent(new Event('submit'));
+        });
+    });
+
+    chatForm.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const message = chatInput.value.trim();
+        if (!message) return;
+
+        const userMessage = document.createElement('div');
+        userMessage.className = 'flex justify-end animate-fadeIn';
+        userMessage.innerHTML = `<div class="max-w-[80%] p-3 bg-blue-500 rounded-lg"><p class="text-sm">${message}</p></div>`;
+        chatMessages.appendChild(userMessage);
+
+        chatInput.value = '';
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+
+        const loadingMessage = document.createElement('div');
+        loadingMessage.className = 'flex justify-start animate-fadeIn';
+        loadingMessage.innerHTML = `<div class="max-w-[80%] p-3 bg-gray-700 rounded-lg"><p class="text-sm text-gray-400"><span class="inline-block animate-pulse">●</span> Thinking...</p></div>`;
+        chatMessages.appendChild(loadingMessage);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+
+        try {
+            const response = await fetch('/chat/message/', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    message: message,
+                    movie_id: {{ movie.id }}
+                })
+            });
+
+            const data = await response.json();
+            chatMessages.removeChild(loadingMessage);
+
+            const aiMessage = document.createElement('div');
+            aiMessage.className = 'flex justify-start animate-fadeIn';
+            aiMessage.innerHTML = `<div class="max-w-[80%] p-3 bg-gray-700 rounded-lg"><p class="text-sm text-gray-300" id="typing-text"></p></div>`;
+            chatMessages.appendChild(aiMessage);
+
+            const typingElement = document.getElementById('typing-text');
+            const text = data.message;
+            let index = 0;
+
+            function typeWriter() {
+                if (index < text.length) {
+                    typingElement.textContent += text.charAt(index);
+                    index++;
+                    chatMessages.scrollTop = chatMessages.scrollHeight;
+                    setTimeout(typeWriter, 20);
+                } else {
+                    typingElement.removeAttribute('id');
+                }
+            }
+
+            typeWriter();
+
+        } catch (error) {
+            console.error('Chat error:', error);
+            chatMessages.removeChild(loadingMessage);
+            const errorMessage = document.createElement('div');
+            errorMessage.className = 'flex justify-start animate-fadeIn';
+            errorMessage.innerHTML = `<div class="max-w-[80%] p-3 bg-red-500/20 rounded-lg border border-red-500"><p class="text-sm text-red-400">Failed to get response. Please try again.</p></div>`;
+            chatMessages.appendChild(errorMessage);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        }
+    });
+
+    const starRatings = document.querySelectorAll('.star-rating');
+    starRatings.forEach((star, index) => {
+        star.addEventListener('click', function() {
+            starRatings.forEach((s, i) => {
+                if (i <= index) {
+                    s.classList.remove('text-gray-600');
+                    s.classList.add('text-yellow-400');
+                } else {
+                    s.classList.remove('text-yellow-400');
+                    s.classList.add('text-gray-600');
+                }
+            });
+        });
+    });
+});
+</script>
+
+<style>
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+.animate-fadeIn {
+    animation: fadeIn 0.3s ease-out;
+}
+#chat-messages::-webkit-scrollbar {
+    display: none;
+}
+</style>
+{% endblock %}

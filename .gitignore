@@ -1,0 +1,129 @@
+# Python
+*.py[cod]
+*$py.class
+*.so
+__pycache__/
+*.egg
+*.egg-info/
+dist/
+build/
+.Python
+
+# Virtual Environment
+.venv/
+venv/
+ENV/
+env/
+
+# Django
+*.log
+db.sqlite3
+db.sqlite3-journal
+/media
+/staticfiles
+/static_root
+
+# Environment variables
+.env
+.env.local
+.env.production
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# N8N (if you add it later)
+n8n/
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+tmp/
+temp/
+
+# Django migrations (optional - usually commit these)
+# */migrations/*.py
+# !*/migrations/__init__.py
+
+# Collected static files
+/collected_static/
+
+# Cache
+.cache/
+
+# MacOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Local development settings
+local_settings.py
+
+# Backup files
+*.bak
+*.backup
+
+# AI/ML specific
+*.h5
+*.pkl
+*.joblib
+faiss_index/
+embeddings_cache/
+
+# Node dependencies
+node_modules/
+
+# Build output directories
+dist/
+build/
+out/
+
+# Vite cache
+.vite/
+vite-cache/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+bun-debug.log*
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Editor & OS-specific files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*.log

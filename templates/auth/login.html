@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Login - flickora</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-white">
+    <div class="min-h-screen flex items-center justify-center px-4">
+        <div class="max-w-md w-full">
+            <div class="text-center mb-8">
+                <div class="flex items-center justify-center gap-3 mb-4">
+                    <svg class="w-12 h-12 text-blue-500" fill="currentColor" viewBox="0 0 24 24">
+                        <rect x="2" y="2" width="20" height="20" rx="2" fill="none" stroke="currentColor" stroke-width="2"/>
+                        <rect x="7" y="7" width="4" height="10"/>
+                        <rect x="13" y="7" width="4" height="10"/>
+                    </svg>
+                    <h1 class="text-3xl font-bold">flickora</h1>
+                </div>
+                <h2 class="text-2xl font-semibold mb-2">Welcome back</h2>
+                <p class="text-gray-400">Sign in to continue your movie journey</p>
+            </div>
+
+            <div class="bg-gray-800 rounded-lg p-8">
+                <form method="post" class="space-y-4">
+                    {% csrf_token %}
+                    
+                    {% if form.non_field_errors %}
+                    <div class="bg-red-500/10 border border-red-500 rounded-lg p-4 text-red-500">
+                        {{ form.non_field_errors }}
+                    </div>
+                    {% endif %}
+
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Username</label>
+                        {{ form.username }}
+                        {% if form.username.errors %}
+                        <p class="mt-2 text-sm text-red-500">{{ form.username.errors.0 }}</p>
+                        {% endif %}
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium mb-2">Password</label>
+                        {{ form.password }}
+                        {% if form.password.errors %}
+                        <p class="mt-2 text-sm text-red-500">{{ form.password.errors.0 }}</p>
+                        {% endif %}
+                    </div>
+
+                    <button type="submit" class="w-full py-3 bg-blue-500 hover:bg-blue-600 rounded-lg font-semibold transition">
+                        Sign In
+                    </button>
+                </form>
+
+                <div class="mt-6 text-center">
+                    <p class="text-gray-400">
+                        Don't have an account? 
+                        <a href="{% url 'register' %}" class="text-blue-500 hover:text-blue-400 font-medium">Sign up</a>
+                    </p>
+                </div>
+            </div>
+
+            <div class="mt-6 text-center">
+                <a href="{% url 'home' %}" class="text-gray-400 hover:text-white transition">
+                    ← Back to Home
+                </a>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

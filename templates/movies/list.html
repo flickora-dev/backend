@@ -1,0 +1,144 @@
+{% extends 'base.html' %}
+
+{% block title %}Movies - flickora{% endblock %}
+
+{% block content %}
+<div class="mb-8">
+    <h1 class="text-4xl font-bold mb-2">Discover Movies</h1>
+    <p class="text-gray-400">Explore our collection of AI-analyzed films</p>
+</div>
+
+<div class="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-8">
+    <div class="lg:col-span-1">
+        <div class="bg-gray-800 rounded-lg p-6 sticky top-4">
+            <h2 class="text-xl font-bold mb-4">Filters</h2>
+            
+            <form method="GET" action="{% url 'movie_list' %}" id="filterForm">
+                <div class="mb-6">
+                    <label class="block text-sm font-semibold mb-2">By year</label>
+                    <select name="year" class="w-full px-3 py-2 bg-gray-700 rounded" onchange="this.form.submit()">
+                        <option value="all" {% if selected_year == 'all' %}selected{% endif %}>All</option>
+                        {% for year in all_years %}
+                        <option value="{{ year }}" {% if selected_year == year|stringformat:"s" %}selected{% endif %}>
+                            {{ year }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                
+                <div class="mb-6">
+                    <label class="block text-sm font-semibold mb-2">By genre</label>
+                    <div class="space-y-2 max-h-96 overflow-y-auto">
+                        <a href="?{% if search_query %}search={{ search_query }}&{% endif %}{% if selected_year != 'all' %}year={{ selected_year }}{% endif %}" 
+                           class="block px-3 py-2 rounded hover:bg-gray-700 {% if not selected_genre %}bg-red-500{% endif %}">
+                            All
+                        </a>
+                        {% for genre in all_genres %}
+                        <a href="?genre={{ genre.tmdb_id }}{% if search_query %}&search={{ search_query }}{% endif %}{% if selected_year != 'all' %}&year={{ selected_year }}{% endif %}" 
+                           class="block px-3 py-2 rounded hover:bg-gray-700 {% if selected_genre == genre.tmdb_id|stringformat:'s' %}bg-red-500{% endif %}">
+                            {{ genre.name }} <span class="text-gray-400 text-sm">({{ genre.movie_count }})</span>
+                        </a>
+                        {% endfor %}
+                    </div>
+                </div>
+            </form>
+            
+            <a href="{% url 'movie_list' %}" class="block w-full px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded text-center">
+                Clear Filters
+            </a>
+        </div>
+    </div>
+    
+    <div class="lg:col-span-3">
+        <div class="mb-6">
+            <form method="GET" action="{% url 'movie_list' %}" class="max-w-2xl">
+                <input type="hidden" name="genre" value="{{ selected_genre }}">
+                <input type="hidden" name="year" value="{{ selected_year }}">
+                <div class="flex gap-2">
+                    <input 
+                        type="text" 
+                        name="search" 
+                        value="{{ search_query }}"
+                        placeholder="Search movies by title or director..."
+                        class="flex-1 px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg focus:outline-none focus:border-red-500"
+                    >
+                    <button type="submit" class="px-6 py-3 bg-red-500 hover:bg-red-600 rounded-lg transition">
+                        Search
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+            {% for movie in movies %}
+            <a href="{% url 'movie_detail' movie.id %}" class="group">
+                <div class="bg-gray-800 rounded-lg overflow-hidden hover:ring-2 hover:ring-red-500 transition">
+                    <div class="aspect-[2/3] bg-gray-700 relative overflow-hidden">
+                        {% if movie.poster_url %}
+                            <img src="{{ movie.poster_url }}" 
+                                 alt="{{ movie.title }}"
+                                 class="w-full h-full object-cover group-hover:scale-105 transition duration-300">
+                        {% else %}
+                            <div class="w-full h-full flex items-center justify-center text-gray-500">
+                                No Poster
+                            </div>
+                        {% endif %}
+                    </div>
+                    
+                    <div class="p-4">
+                        <h3 class="font-bold text-lg mb-1 group-hover:text-red-500 transition truncate">
+                            {{ movie.title }}
+                        </h3>
+                        <div class="flex items-center justify-between text-sm text-gray-400 mb-2">
+                            <span>{{ movie.year }}</span>
+                            {% if movie.imdb_rating %}
+                                <span class="flex items-center gap-1">
+                                    ⭐ {{ movie.imdb_rating }}
+                                </span>
+                            {% endif %}
+                        </div>
+                        <div class="flex flex-wrap gap-1 mb-2">
+                            {% for genre in movie.genres.all|slice:":3" %}
+                            <span class="text-xs px-2 py-1 bg-gray-700 rounded">{{ genre.name }}</span>
+                            {% endfor %}
+                        </div>
+                        {% if movie.sections.count > 0 %}
+                            <div class="mt-2 text-xs text-green-400">
+                                ✓ AI Analysis Available
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </a>
+            {% empty %}
+            <div class="col-span-full text-center text-gray-400 py-12">
+                <p class="text-xl">No movies found</p>
+                <p class="mt-2">Try adjusting your filters</p>
+            </div>
+            {% endfor %}
+        </div>
+
+        {% if is_paginated %}
+        <div class="mt-8 flex justify-center gap-2">
+            {% if page_obj.has_previous %}
+                <a href="?page=1{% if search_query %}&search={{ search_query }}{% endif %}{% if selected_genre %}&genre={{ selected_genre }}{% endif %}{% if selected_year != 'all' %}&year={{ selected_year }}{% endif %}" 
+                   class="px-4 py-2 bg-gray-800 rounded hover:bg-gray-700">First</a>
+                <a href="?page={{ page_obj.previous_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}{% if selected_genre %}&genre={{ selected_genre }}{% endif %}{% if selected_year != 'all' %}&year={{ selected_year }}{% endif %}" 
+                   class="px-4 py-2 bg-gray-800 rounded hover:bg-gray-700">Previous</a>
+            {% endif %}
+            
+            <span class="px-4 py-2 bg-red-500 rounded">
+                Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
+            </span>
+            
+            {% if page_obj.has_next %}
+                <a href="?page={{ page_obj.next_page_number }}{% if search_query %}&search={{ search_query }}{% endif %}{% if selected_genre %}&genre={{ selected_genre }}{% endif %}{% if selected_year != 'all' %}&year={{ selected_year }}{% endif %}" 
+                   class="px-4 py-2 bg-gray-800 rounded hover:bg-gray-700">Next</a>
+                <a href="?page={{ page_obj.paginator.num_pages }}{% if search_query %}&search={{ search_query }}{% endif %}{% if selected_genre %}&genre={{ selected_genre }}{% endif %}{% if selected_year != 'all' %}&year={{ selected_year }}{% endif %}" 
+                   class="px-4 py-2 bg-gray-800 rounded hover:bg-gray-700">Last</a>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
