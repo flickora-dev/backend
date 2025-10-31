@@ -38,6 +38,8 @@ CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in csrf_origins.split(",") if 
 
 CORS_ALLOW_CREDENTIALS = True
 
+APPEND_SLASH = False
+
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
