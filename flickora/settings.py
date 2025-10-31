@@ -31,10 +31,11 @@ else:
     CORS_ALLOW_ALL_ORIGINS = False
     CORS_ALLOWED_ORIGINS = [origin.strip() for origin in cors_origins.split(",") if origin.strip()]
 
-csrf_origins = os.getenv("CSRF_TRUSTED_ORIGINS", "http://localhost:5173,http://localhost:3000, https://flickora-production-7a6e.up.railway.app")
-# if railway_domain:
-#     csrf_origins += f",https://{railway_domain}"
-CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in csrf_origins.split(",") if origin.strip() and "://" in origin]
+csrf_origins = os.getenv(
+    "CSRF_TRUSTED_ORIGINS",
+    "http://localhost:5173,http://localhost:3000,https://flickora-production-7a6e.up.railway.app"
+)
+CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in csrf_origins.split(",") if origin.strip()]
 
 CORS_ALLOW_CREDENTIALS = True
 
