@@ -4,10 +4,12 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
+from django.views.decorators.csrf import csrf_exempt
 
 from movies.serializers import UserSerializer, RegisterSerializer
 
 
+@csrf_exempt
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def register(request):
@@ -17,7 +19,6 @@ def register(request):
     if serializer.is_valid():
         user = serializer.save()
         
-        # Generate JWT tokens
         refresh = RefreshToken.for_user(user)
         
         return Response({
@@ -31,6 +32,7 @@ def register(request):
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+@csrf_exempt
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def login(request):
@@ -52,7 +54,6 @@ def login(request):
             status=status.HTTP_401_UNAUTHORIZED
         )
     
-    # Generate JWT tokens
     refresh = RefreshToken.for_user(user)
     
     return Response({
@@ -64,6 +65,7 @@ def login(request):
     })
 
 
+@csrf_exempt
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def logout(request):
