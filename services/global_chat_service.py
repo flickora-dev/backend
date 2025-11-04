@@ -24,17 +24,17 @@ class GlobalChatService:
             # Pobierz historię konwersacji
             conversation_history = []
             referenced_movies = []
+            system_prompt_sent = False
             
             if conversation_id:
-                conversation_history, referenced_movies = self._get_conversation_context(conversation_id)
+                conversation_history, referenced_movies, system_prompt_sent = self._get_conversation_context(conversation_id)
             
-            # Klasyfikuj zapytanie z uwzględnieniem kontekstu
+            # Klasyfikuj zapytanie
             query_type = self._classify_query_type(user_message, conversation_history)
             
-            # Jeśli pytanie odnosi się do poprzednich filmów ("them", "those", "these")
-            if self._is_follow_up_question(user_message) and referenced_movies:
+            # Wybierz strategię wyszukiwania
+            if query_type == 'follow_up' and referenced_movies:
                 results = self._handle_follow_up(user_message, referenced_movies)
-            # Standardowe typy zapytań
             elif query_type == 'recommendation':
                 results = self._handle_recommendation(user_message)
             elif query_type == 'comparison':
@@ -44,54 +44,70 @@ class GlobalChatService:
             else:
                 results = self.rag.search_with_scores(user_message, k=8, movie_id=None)
             
-            # Wyodrębnij tytuły filmów z wyników
+            # Wyodrębnij tytuły filmów
             current_movies = list(set([r['section'].movie.title for r in results[:8]]))
             
-            # Przygotuj kontekst z historią konwersacji
+            # Przygotuj kontekst z wyników wyszukiwania
             context_parts = []
-            
-            # Dodaj ostatnie 2 wymianę wiadomości dla kontekstu
-            if conversation_history:
-                context_parts.append("=== Recent conversation context ===")
-                for msg in conversation_history[-4:]:  # Ostatnie 2 pary (user + assistant)
-                    context_parts.append(f"{msg['role'].upper()}: {msg['content'][:200]}")
-                context_parts.append("=== Current query context ===")
-            
-            # Dodaj wyniki wyszukiwania
-            for r in results[:8]:
+            for r in results[:6]:  # Ogranicz do 6 najlepszych
                 section = r['section']
                 context_parts.append(
                     f"[{section.movie.title} ({section.movie.year}) - {section.get_section_type_display()}]\n"
-                    f"{section.content[:700]}"
+                    f"{section.content[:600]}"
                 )
             
             context = "\n\n---\n\n".join(context_parts)
             
-            # System prompt z uwzględnieniem kontekstu konwersacji
-            system_prompt = self._get_system_prompt(query_type, context, bool(conversation_history))
+            # Przygotuj wiadomości dla LLM
+            messages = []
             
-            # Przygotuj historię dla LLM (ostatnie 3 pary wiadomości)
-            messages = [{"role": "system", "content": system_prompt}]
+            # KLUCZOWE: System prompt tylko przy pierwszej wiadomości
+            if not system_prompt_sent:
+                system_prompt = self._get_initial_system_prompt(query_type)
+                messages.append({
+                    "role": "system",
+                    "content": system_prompt
+                })
             
+            # Dodaj historię konwersacji (ostatnie 6 wiadomości = 3 pary)
             if conversation_history:
-                for msg in conversation_history[-6:]:  # Ostatnie 3 pary
+                for msg in conversation_history[-6:]:
                     messages.append({
                         "role": msg['role'],
                         "content": msg['content']
                     })
             
-            # Dodaj aktualne pytanie
-            messages.append({"role": "user", "content": user_message})
+            # Dodaj kontekst + aktualne pytanie
+            user_message_with_context = f"""Context from movie database:
+    {context}
+
+    Question: {user_message}"""
+            
+            messages.append({
+                "role": "user",
+                "content": user_message_with_context
+            })
             
             # Wywołaj LLM
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                max_tokens=500,
-                temperature=0.7
-            )
-            
-            answer = response.choices[0].message.content.strip()
+            try:
+                response = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    max_tokens=400,
+                    temperature=0.7
+                )
+                
+                if not response or not response.choices:
+                    raise ValueError("Empty response from OpenRouter")
+                
+                answer = response.choices[0].message.content.strip()
+                
+                if not answer:
+                    raise ValueError("Empty content in response")
+                
+            except Exception as api_error:
+                logger.error(f"OpenRouter API error: {api_error}")
+                answer = self._generate_fallback_response(query_type, results[:3])
             
             # Ogranicz długość odpowiedzi
             sentences = re.split(r'(?<=[.!?])\s+', answer)
@@ -102,7 +118,8 @@ class GlobalChatService:
                 'message': answer,
                 'sources': results[:8],
                 'query_type': query_type,
-                'referenced_movies': current_movies  # Zwróć filmy do zapisania w conversation
+                'referenced_movies': current_movies,
+                'is_first_message': not system_prompt_sent  # Informacja dla widoku
             }
             
         except Exception as e:
@@ -113,12 +130,13 @@ class GlobalChatService:
                 'message': "Sorry, I encountered an error. Please try again.",
                 'sources': [],
                 'query_type': 'error',
-                'referenced_movies': []
+                'referenced_movies': [],
+                'is_first_message': False
             }
 
     def _get_conversation_context(self, conversation_id):
         """
-        Pobierz historię konwersacji i referenced movies
+        Pobierz historię konwersacji, referenced movies i status system prompt
         """
         from chat.models import ChatConversation, ChatMessage
         
@@ -132,10 +150,11 @@ class GlobalChatService:
             ]
             
             referenced_movies = conversation.referenced_movies or []
+            system_prompt_sent = conversation.system_prompt_sent
             
-            return history, referenced_movies
+            return history, referenced_movies, system_prompt_sent
         except:
-            return [], []
+            return [], [], False
 
     def _is_follow_up_question(self, message):
         """
@@ -290,6 +309,57 @@ class GlobalChatService:
             for section in results
         ]
         
+        
+    def _get_initial_system_prompt(self, query_type):
+        """
+        System prompt wysyłany tylko przy pierwszej wiadomości
+        """
+        base_prompt = """You are an expert movie assistant with access to a comprehensive movie database.
+
+    YOUR CORE RULES:
+    1. Answer ONLY based on the context provided in each message
+    2. ALWAYS mention specific movie titles when discussing films
+    3. Be conversational and concise (4-6 sentences per response)
+    4. If the question is not about movies, politely redirect: "I can only discuss movies from our database"
+    5. When users refer to "them", "those", or "these movies", they mean the films just discussed
+    6. Never use information outside the provided context
+
+    YOUR EXPERTISE:
+    - Movie recommendations based on themes, genres, and preferences
+    - Comparing films across different aspects
+    - Analyzing themes, characters, and storytelling
+    - Discussing cinematography, direction, and technical elements"""
+        
+        if query_type == 'recommendation':
+            base_prompt += """
+
+    RECOMMENDATION FOCUS:
+    - Suggest 2-4 specific movies from the context
+    - Explain WHY each recommendation fits
+    - Highlight key themes, genres, or unique elements
+    - Be enthusiastic but honest about each film"""
+        
+        elif query_type == 'comparison':
+            base_prompt += """
+
+    COMPARISON FOCUS:
+    - Compare specific aspects from the context
+    - Highlight both similarities AND differences
+    - Be balanced and fair to all films
+    - Use concrete examples from the analyses"""
+        
+        elif query_type in ['genre_theme', 'follow_up']:
+            base_prompt += """
+
+    THEMATIC FOCUS:
+    - Identify common themes across multiple films
+    - Mention 3-5 relevant movies from the context
+    - Explain how each explores the theme/genre
+    - Provide specific narrative or stylistic examples"""
+        
+        return base_prompt
+    
+    
     def _get_system_prompt(self, query_type, context, has_history=False):
         """
         Zwróć system prompt z uwzględnieniem historii

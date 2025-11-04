@@ -20,7 +20,7 @@ class ChatConversation(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     
     referenced_movies = models.JSONField(default=list, blank=True)
-    
+    system_prompt_sent = models.BooleanField(default=False)
     class Meta:
         ordering = ['-updated_at']
         

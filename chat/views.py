@@ -12,7 +12,7 @@ def chat_message(request):
         data = json.loads(request.body)
         message = data.get('message')
         movie_id = data.get('movie_id')
-        conversation_id = data.get('conversation_id') 
+        conversation_id = data.get('conversation_id')
         
         if not message:
             return JsonResponse({'error': 'Message is required'}, status=400)
@@ -29,7 +29,8 @@ def chat_message(request):
         if not conversation:
             conversation = ChatConversation.objects.create(
                 conversation_type='movie' if movie_id else 'global',
-                movie_id=movie_id
+                movie_id=movie_id,
+                system_prompt_sent=False  # DODAJ
             )
         
         # Zapisz wiadomość użytkownika
@@ -44,8 +45,19 @@ def chat_message(request):
         if movie_id:
             result = chat_service.chat(message, movie_id)
         else:
-            # POPRAWKA: Przekaż conversation_id
             result = chat_service.global_chat.chat(message, conversation_id=conversation.id)
+        
+        # WAŻNE: Oznacz że system prompt został wysłany
+        if result.get('is_first_message', False):
+            conversation.system_prompt_sent = True
+        
+        # Zaktualizuj referenced_movies
+        if 'referenced_movies' in result and result['referenced_movies']:
+            current_movies = conversation.referenced_movies or []
+            new_movies = result['referenced_movies']
+            conversation.referenced_movies = (current_movies + new_movies)[-10:]
+        
+        conversation.save()
         
         # Zapisz odpowiedź asystenta
         ChatMessage.objects.create(
@@ -54,14 +66,7 @@ def chat_message(request):
             content=result['message']
         )
         
-        # DODAJ: Zaktualizuj referenced_movies w konwersacji
-        if 'referenced_movies' in result and result['referenced_movies']:
-            current_movies = conversation.referenced_movies or []
-            new_movies = result['referenced_movies']
-            # Zachowaj ostatnie 10 filmów
-            conversation.referenced_movies = (current_movies + new_movies)[-10:]
-            conversation.save()
-        
+        # Przygotuj odpowiedź
         serialized_sources = [
             {
                 'section_id': source['section_id'],
@@ -75,7 +80,7 @@ def chat_message(request):
         return JsonResponse({
             'message': result['message'],
             'sources': serialized_sources,
-            'conversation_id': conversation.id  # DODAJ: Zwróć ID
+            'conversation_id': conversation.id
         })
     
     except json.JSONDecodeError:
