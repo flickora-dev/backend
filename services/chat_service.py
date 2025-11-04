@@ -14,7 +14,7 @@ class ChatService:
             api_key=settings.OPENROUTER_API_KEY
         )
         # self.model = "deepseek/deepseek-chat-v3.1:free"
-        self.model = "meta-llama/llama-3.3-8b-instruct:free"
+        self.model = "google/gemma-3-4b-it:free"
 
         self.rag = RAGService()
         self.global_chat = GlobalChatService()
