@@ -26,9 +26,9 @@ class OptimizedRAGService:
         try:
             self.reranker = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
             self.use_reranking = True
-            logger.info("✅ Cross-encoder loaded - expect ~25% improvement in relevance")
+            logger.info("Cross-encoder loaded - expect ~25% improvement in relevance")
         except Exception as e:
-            logger.warning(f"⚠️  Cross-encoder not available: {e}")
+            logger.warning(f"Cross-encoder not available: {e}")
             logger.warning("Install with: pip install sentence-transformers")
             self.use_reranking = False
         
