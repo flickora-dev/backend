@@ -13,7 +13,7 @@ class GlobalChatService:
             base_url="https://openrouter.ai/api/v1",
             api_key=settings.OPENROUTER_API_KEY
         )
-        self.model = "google/gemma-3-4b-it:free"
+        self.model = "deepseek/deepseek-chat-v3.1:free"
         self.rag = RAGService()
     
     def chat(self, user_message, conversation_id=None):
