@@ -31,12 +31,14 @@ class GlobalChatService:
             elif query_type == 'genre_theme':
                 results = self._handle_genre_theme(user_message)
             else:
+                # POPRAWKA: Użyj standardowej metody search_with_scores
                 results = self.rag.search_with_scores(user_message, k=8, movie_id=None)
             
-            # Przygotuj kontekst
+            # Przygotuj kontekst - POPRAWKA: Jednolita struktura danych
             context_parts = []
             for r in results[:8]:
-                section = r.get('section') if isinstance(r, dict) else r
+                # Wszystkie metody zwracają dict ze 'section' key
+                section = r['section']
                 
                 context_parts.append(
                     f"[{section.movie.title} ({section.movie.year}) - {section.get_section_type_display()}]\n"
@@ -68,18 +70,20 @@ class GlobalChatService:
             
             return {
                 'message': answer,
-                'sources': self._format_sources(results[:8]),
+                'sources': results[:8],  # POPRAWKA: Zwróć już sformatowane źródła
                 'query_type': query_type
             }
             
         except Exception as e:
             logger.error(f"Global chat error: {e}")
+            import traceback
+            logger.error(traceback.format_exc())  # Dodaj pełny traceback
             return {
                 'message': "Sorry, I encountered an error. Please try again.",
                 'sources': [],
                 'query_type': 'error'
             }
-    
+        
     def _classify_query_type(self, query):
         """
         Klasyfikuj typ zapytania dla global chat
@@ -248,25 +252,29 @@ Context from movie analyses:
 
 Answer the user's question based STRICTLY on this context."""
     
-    def _format_sources(self, results):
+    def _handle_recommendation(self, query):
+        return self.rag.search_for_recommendations(query, k=10)
+
+    def _handle_comparison(self, query):
         """
-        Formatuj źródła dla odpowiedzi
+        Obsługa zapytań porównawczych
         """
-        sources = []
-        for r in results:
-            if isinstance(r, dict):
-                sources.append({
-                    'section_id': r.get('section_id'),
-                    'similarity': r.get('similarity', 0),
-                    'movie_title': r.get('movie_title'),
-                    'section_type': r.get('section_type')
-                })
-            else:
-                sources.append({
-                    'section_id': r.id,
-                    'similarity': 1.0 - r.distance,
-                    'movie_title': r.movie.title,
-                    'section_type': r.get_section_type_display()
-                })
+        from movies.models import Movie
         
-        return sources
+        movies = Movie.objects.all()[:100]
+        movie_titles = []
+        
+        for movie in movies:
+            if movie.title.lower() in query.lower():
+                movie_titles.append(movie.title)
+        
+        if len(movie_titles) >= 2:
+            return self.rag.search_for_comparison(query, movie_titles, k=8)
+        else:
+            return self.rag.search_with_scores(query, k=8, movie_id=None)
+
+    def _handle_genre_theme(self, query):
+        """
+        Obsługa zapytań o gatunki i tematy
+        """
+        return self.rag.search_by_genre_or_theme(query, k=10)

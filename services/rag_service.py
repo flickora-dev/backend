@@ -178,6 +178,7 @@ class RAGService:
         ]
     
     def search_for_recommendations(self, query, k=10, filters=None):
+        from reports.models import MovieSection
         
         query_embedding = self.generate_embedding(query)
         
@@ -221,7 +222,18 @@ class RAGService:
             if len(diverse_results) >= k:
                 break
         
-        return diverse_results
+        # POPRAWKA: Zwróć w tym samym formacie co search_with_scores
+        return [
+            {
+                'section': section,
+                'section_id': section.id,
+                'similarity': 1.0 - section.distance,
+                'weighted_score': getattr(section, 'weighted_score', 1.0 - section.distance),
+                'movie_title': section.movie.title,
+                'section_type': section.get_section_type_display()
+            }
+            for section in diverse_results
+        ]
 
     def search_for_comparison(self, query, movie_titles, k=8):
         """
@@ -235,6 +247,10 @@ class RAGService:
         # Znajdź filmy po tytułach
         movies = Movie.objects.filter(title__in=movie_titles)
         movie_ids = [m.id for m in movies]
+        
+        if not movie_ids:
+            # Jeśli nie znaleziono filmów, użyj standardowego wyszukiwania
+            return self.search_with_scores(query, k=k, movie_id=None)
         
         queryset = MovieSection.objects.filter(
             embedding__isnull=False,
@@ -254,7 +270,18 @@ class RAGService:
         
         reranked = sorted(results, key=lambda x: x.weighted_score, reverse=True)[:k]
         
-        return reranked
+        # POPRAWKA: Zwróć w tym samym formacie co search_with_scores
+        return [
+            {
+                'section': section,
+                'section_id': section.id,
+                'similarity': 1.0 - section.distance,
+                'weighted_score': section.weighted_score,
+                'movie_title': section.movie.title,
+                'section_type': section.get_section_type_display()
+            }
+            for section in reranked
+        ]
 
     def search_by_genre_or_theme(self, query, k=10):
         """
@@ -286,4 +313,15 @@ class RAGService:
             if len(diverse_results) >= k:
                 break
         
-        return diverse_results
+        # POPRAWKA: Zwróć w tym samym formacie co search_with_scores
+        return [
+            {
+                'section': section,
+                'section_id': section.id,
+                'similarity': 1.0 - section.distance,
+                'weighted_score': 1.0 - section.distance,
+                'movie_title': section.movie.title,
+                'section_type': section.get_section_type_display()
+            }
+            for section in diverse_results
+        ]
