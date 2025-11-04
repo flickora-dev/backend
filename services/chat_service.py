@@ -3,6 +3,7 @@ from django.conf import settings
 from services.rag_service import RAGService
 import logging
 import re
+from services.global_chat_service import GlobalChatService
 logger = logging.getLogger(__name__)
 
 
@@ -16,11 +17,9 @@ class ChatService:
         self.model = "meta-llama/llama-3.3-8b-instruct:free"
 
         self.rag = RAGService()
-    
+        self.global_chat = GlobalChatService()
+        
     def chat(self, user_message, movie_id=None):
-        """
-        Enhanced chat with better context retrieval
-        """
         if not movie_id:
             return self.global_chat.chat(user_message)
         
