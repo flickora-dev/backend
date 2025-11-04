@@ -289,78 +289,89 @@ class GlobalChatService:
             }
             for section in results
         ]
-    
-    def _get_system_prompt(self, query_type, context):
+        
+    def _get_system_prompt(self, query_type, context, has_history=False):
         """
-        Zwróć odpowiedni system prompt dla typu zapytania
+        Zwróć system prompt z uwzględnieniem historii
         """
-        base_rules = """
-CRITICAL RULES:
-1. Answer ONLY based on the context provided above
-2. If the question is not about movies, politely say: "I can only answer questions about movies based on our database."
-3. NEVER use your general knowledge - only use the context
-4. Be conversational and concise (4-6 sentences)
-5. ALWAYS mention specific movie titles when relevant
-6. If context doesn't fully answer the question, say what you know
-"""
-        
-        if query_type == 'recommendation':
-            return f"""You are a movie recommendation expert.
+        history_instruction = ""
+        if has_history:
+            history_instruction = """
+        CONVERSATION CONTEXT:
+        - You have access to the recent conversation history above
+        - When user refers to "them", "those", "these", they mean the movies just discussed
+        - Maintain context and build upon previous answers
+        - Be consistent with what you said before
+        """
+            
+            base_rules = f"""
+        CRITICAL RULES:
+        1. Answer ONLY based on the context provided above
+        2. If the question is not about movies, politely say: "I can only answer questions about movies based on our database."
+        3. NEVER use your general knowledge - only use the context
+        4. Be conversational and concise (4-6 sentences)
+        5. ALWAYS mention specific movie titles when relevant
+        6. If context doesn't fully answer the question, say what you know
+        {history_instruction}
+        """
+            
+            if query_type == 'recommendation':
+                return f"""You are a movie recommendation expert.
 
-Context from movie analyses:
-{context}
+        Context from movie analyses:
+        {context}
 
-{base_rules}
+        {base_rules}
 
-RECOMMENDATION RULES:
-- Suggest 2-4 specific movies from the context
-- Explain WHY each movie fits the request
-- Mention key themes, genres, or elements that match
-- Be enthusiastic but honest
+        RECOMMENDATION RULES:
+        - Suggest 2-4 specific movies from the context
+        - Explain WHY each movie fits the request
+        - Mention key themes, genres, or elements that match
+        - Be enthusiastic but honest
 
-Answer the user's question based STRICTLY on this context."""
-        
-        elif query_type == 'comparison':
-            return f"""You are a movie comparison expert.
+        Answer the user's question based STRICTLY on this context."""
+            
+            elif query_type == 'comparison':
+                return f"""You are a movie comparison expert.
 
-Context from movie analyses:
-{context}
+        Context from movie analyses:
+        {context}
 
-{base_rules}
+        {base_rules}
 
-COMPARISON RULES:
-- Compare specific aspects mentioned in the context
-- Highlight similarities AND differences
-- Be balanced and fair to all movies
-- Use concrete examples from the context
+        COMPARISON RULES:
+        - Compare specific aspects mentioned in the context
+        - Highlight similarities AND differences
+        - Be balanced and fair to all movies
+        - Use concrete examples from the context
 
-Answer the user's question based STRICTLY on this context."""
-        
-        elif query_type == 'genre_theme':
-            return f"""You are a movie genre and theme expert.
+        Answer the user's question based STRICTLY on this context."""
+            
+            elif query_type == 'genre_theme' or query_type == 'follow_up':
+                return f"""You are a movie genre and theme expert.
 
-Context from movie analyses:
-{context}
+        Context from movie analyses:
+        {context}
 
-{base_rules}
+        {base_rules}
 
-GENRE/THEME RULES:
-- Identify common themes across movies
-- Mention 3-5 specific movies that fit
-- Explain how each movie explores the theme/genre
-- Be specific about narrative elements
+        GENRE/THEME RULES:
+        - Identify common themes across movies
+        - Mention 3-5 specific movies that fit
+        - Explain how each movie explores the theme/genre
+        - Be specific about narrative elements
 
-Answer the user's question based STRICTLY on this context."""
-        
-        else:
-            return f"""You are a knowledgeable movie expert assistant.
+        Answer the user's question based STRICTLY on this context."""
+            
+            else:
+                return f"""You are a knowledgeable movie expert assistant.
 
-Context from movie analyses:
-{context}
+        Context from movie analyses:
+        {context}
 
-{base_rules}
+        {base_rules}
 
-Answer the user's question based STRICTLY on this context."""
+        Answer the user's question based STRICTLY on this context."""
     
     def _handle_recommendation(self, query):
         return self.rag.search_for_recommendations(query, k=10)
