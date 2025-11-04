@@ -190,11 +190,15 @@ class GlobalChatService:
             # Fallback do standardowego wyszukiwania
             return self.rag.search_with_scores(query, k=8, movie_id=None)
         
-    def _classify_query_type(self, query):
+    def _classify_query_type(self, query, conversation_history=None):
         """
-        Klasyfikuj typ zapytania dla global chat
+        Klasyfikuj typ zapytania z uwzględnieniem kontekstu konwersacji
         """
         query_lower = query.lower()
+        
+        # Jeśli jest historia i pytanie odnosi się do poprzedniego kontekstu
+        if conversation_history and self._is_follow_up_question(query):
+            return 'follow_up'
         
         recommendation_keywords = [
             'recommend', 'suggestion', 'should i watch', 'similar to',
