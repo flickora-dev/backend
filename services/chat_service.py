@@ -21,6 +21,9 @@ class ChatService:
         """
         Enhanced chat with better context retrieval
         """
+        if not movie_id:
+            return self.global_chat.chat(user_message)
+        
         if movie_id:
             results = self.rag.search_with_scores(user_message, k=3, movie_id=movie_id)
         else:
