@@ -3,7 +3,9 @@ from django.conf import settings
 from services.rag_service import RAGService
 import logging
 import re
-
+from pgvector.django import CosineDistance
+from services.optimized_rag_service import OptimizedRAGService, ConversationMemoryManager
+import numpy as np
 logger = logging.getLogger(__name__)
 
 
@@ -16,110 +18,150 @@ class GlobalChatService:
         self.model = "deepseek/deepseek-chat-v3.1:free"
         self.rag = RAGService()
     
+    import openai
+from django.conf import settings
+from services.optimized_rag_service import OptimizedRAGService, ConversationMemoryManager
+import logging
+import re
+
+logger = logging.getLogger(__name__)
+
+
+class GlobalChatService:
+    def __init__(self):
+        self.client = openai.OpenAI(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=settings.OPENROUTER_API_KEY
+        )
+        self.model = "google/gemini-2.0-flash-exp:free"
+        
+        # Use optimized RAG service
+        self.rag = OptimizedRAGService()
+        self.memory = ConversationMemoryManager()
+    
     def chat(self, user_message, conversation_id=None):
         """
-        Global chat z pamięcią konwersacji
+        Optimized global chat with all improvements
         """
         try:
-            # Pobierz historię konwersacji
-            conversation_history = []
+            # Step 5: Get conversation context
+            conversation_context = None
             referenced_movies = []
             system_prompt_sent = False
             
             if conversation_id:
-                conversation_history, referenced_movies, system_prompt_sent = self._get_conversation_context(conversation_id)
+                conversation_context = self.memory.get_conversation_context(conversation_id, n_messages=5)
+                referenced_movies = self.memory.get_referenced_movies(conversation_id)
+                # Get system_prompt_sent status
+                from chat.models import ChatConversation
+                try:
+                    conv = ChatConversation.objects.get(id=conversation_id)
+                    system_prompt_sent = conv.system_prompt_sent
+                except:
+                    pass
             
-            # Klasyfikuj zapytanie
-            query_type = self._classify_query_type(user_message, conversation_history)
+            # Classify query type
+            query_type = self._classify_query_type(user_message, conversation_context)
             
-            # Wybierz strategię wyszukiwania
-            if query_type == 'follow_up' and referenced_movies:
-                results = self._handle_follow_up(user_message, referenced_movies)
-            elif query_type == 'recommendation':
-                results = self._handle_recommendation(user_message)
-            elif query_type == 'comparison':
-                results = self._handle_comparison(user_message)
-            elif query_type == 'genre_theme':
-                results = self._handle_genre_theme(user_message)
-            else:
-                results = self.rag.search_with_scores(user_message, k=8, movie_id=None)
+            # Step 1, 2, 5: Optimized RAG search with:
+            # - k=10 (vs 5)
+            # - min_similarity=0.30
+            # - conversation_context for better embeddings
+            # - cross-encoder re-ranking
+            results = self.rag.search_with_scores(
+                user_message,
+                k=10,
+                min_similarity=0.30,
+                movie_id=None,
+                conversation_context=conversation_context
+            )
             
-            # Wyodrębnij tytuły filmów
+            logger.info(f"Retrieved {len(results)} sections with avg similarity: "
+                       f"{np.mean([r['similarity'] for r in results]):.3f}")
+            
+            # Extract movie titles
             current_movies = list(set([r['section'].movie.title for r in results[:8]]))
             
-            # Przygotuj kontekst z wyników wyszukiwania
+            # Step 3: Structured prompt with clean context
             context_parts = []
-            for r in results[:6]:  # Ogranicz do 6 najlepszych
+            for i, r in enumerate(results[:8], 1):
                 section = r['section']
+                similarity = r['similarity']
+                
+                # Include similarity score for transparency
                 context_parts.append(
-                    f"[{section.movie.title} ({section.movie.year}) - {section.get_section_type_display()}]\n"
+                    f"[Source {i}] {section.movie.title} ({section.movie.year}) "
+                    f"- {section.get_section_type_display()} [Relevance: {similarity:.2f}]\n"
                     f"{section.content[:600]}"
                 )
             
             context = "\n\n---\n\n".join(context_parts)
             
-            # Przygotuj wiadomości dla LLM
+            # Prepare messages
             messages = []
             
-            # KLUCZOWE: System prompt tylko przy pierwszej wiadomości
+            # System prompt only on first message
             if not system_prompt_sent:
-                system_prompt = self._get_initial_system_prompt(query_type)
+                system_prompt = self._get_structured_system_prompt(query_type)
                 messages.append({
                     "role": "system",
                     "content": system_prompt
                 })
             
-            # Dodaj historię konwersacji (ostatnie 6 wiadomości = 3 pary)
-            if conversation_history:
-                for msg in conversation_history[-6:]:
-                    messages.append({
-                        "role": msg['role'],
-                        "content": msg['content']
-                    })
-            
-            # Dodaj kontekst + aktualne pytanie
-            user_message_with_context = f"""Context from movie database:
-    {context}
+            # Step 3: Structured prompt template
+            user_prompt = f"""User Question:
+            {user_message}
 
-    Question: {user_message}"""
-            
+            Relevant Context from Movie Database:
+            {context}
+
+            Please provide a concise answer (max 200 words) that:
+            - Mentions specific movie titles explicitly
+            - Synthesizes insights across multiple films if relevant
+            - States uncertainty if the context doesn't fully answer the question"""
+                        
             messages.append({
                 "role": "user",
-                "content": user_message_with_context
+                "content": user_prompt
             })
             
-            # Wywołaj LLM
+            # Step 6: Tuned model parameters
             try:
                 response = self.client.chat.completions.create(
                     model=self.model,
                     messages=messages,
-                    max_tokens=400,
-                    temperature=0.7
+                    max_tokens=300,
+                    temperature=0.6,  # Lower for more factual
+                    top_p=0.9,
+                    presence_penalty=0.3,  # Avoid repetition
+                    frequency_penalty=0.3
                 )
                 
                 if not response or not response.choices:
-                    raise ValueError("Empty response from OpenRouter")
+                    raise ValueError("Empty response")
                 
                 answer = response.choices[0].message.content.strip()
-                
-                if not answer:
-                    raise ValueError("Empty content in response")
                 
             except Exception as api_error:
                 logger.error(f"OpenRouter API error: {api_error}")
                 answer = self._generate_fallback_response(query_type, results[:3])
             
-            # Ogranicz długość odpowiedzi
+            # Limit response length
             sentences = re.split(r'(?<=[.!?])\s+', answer)
-            if len(sentences) > 7:
-                answer = '. '.join(sentences[:7]) + '.'
+            if len(sentences) > 8:
+                answer = '. '.join(sentences[:8]) + '.'
             
             return {
                 'message': answer,
                 'sources': results[:8],
                 'query_type': query_type,
                 'referenced_movies': current_movies,
-                'is_first_message': not system_prompt_sent  # Informacja dla widoku
+                'is_first_message': not system_prompt_sent,
+                'metrics': {  # Step 7: Evaluation metrics
+                    'avg_similarity': float(np.mean([r['similarity'] for r in results[:8]])),
+                    'num_sources': len(results),
+                    'num_movies': len(current_movies)
+                }
             }
             
         except Exception as e:
@@ -131,8 +173,33 @@ class GlobalChatService:
                 'sources': [],
                 'query_type': 'error',
                 'referenced_movies': [],
-                'is_first_message': False
+                'is_first_message': False,
+                'metrics': {}
             }
+    
+    def _get_structured_system_prompt(self, query_type):
+        """
+        Step 3: Structured prompt engineering
+        """
+        base = """You are CineChat — an intelligent movie analyst assistant.
+
+        Guidelines:
+        - Answer using ONLY the provided context snippets
+        - If multiple movies are mentioned, compare or synthesize insights across them
+        - Be concise (max 200 words)
+        - Mention movie titles explicitly
+        - If unsure or context insufficient, say so — do not hallucinate
+        - When users refer to "them", "those", or "these", they mean previously discussed movies"""
+        
+        if query_type == 'recommendation':
+            base += "\n- Suggest 2-4 movies and explain why they fit the user's criteria"
+        elif query_type == 'comparison':
+            base += "\n- Compare movies fairly with specific examples from the context"
+        elif query_type in ['genre_theme', 'follow_up']:
+            base += "\n- Identify common themes and mention 3-5 relevant movies"
+        
+        return base
+    
 
     def _get_conversation_context(self, conversation_id):
         """
