@@ -19,6 +19,8 @@ class ChatConversation(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
+    referenced_movies = models.JSONField(default=list, blank=True)
+    
     class Meta:
         ordering = ['-updated_at']
         

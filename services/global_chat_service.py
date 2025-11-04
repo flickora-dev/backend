@@ -16,30 +16,50 @@ class GlobalChatService:
         self.model = "meta-llama/llama-3.3-8b-instruct:free"
         self.rag = RAGService()
     
-    def chat(self, user_message):
+    def chat(self, user_message, conversation_id=None):
         """
-        Global chat - odpowiedzi o filmach z całej bazy
+        Global chat z pamięcią konwersacji
         """
         try:
-            query_type = self._classify_query_type(user_message)
+            # Pobierz historię konwersacji
+            conversation_history = []
+            referenced_movies = []
             
-            # Wybierz odpowiednią strategię wyszukiwania
-            if query_type == 'recommendation':
+            if conversation_id:
+                conversation_history, referenced_movies = self._get_conversation_context(conversation_id)
+            
+            # Klasyfikuj zapytanie z uwzględnieniem kontekstu
+            query_type = self._classify_query_type(user_message, conversation_history)
+            
+            # Jeśli pytanie odnosi się do poprzednich filmów ("them", "those", "these")
+            if self._is_follow_up_question(user_message) and referenced_movies:
+                results = self._handle_follow_up(user_message, referenced_movies)
+            # Standardowe typy zapytań
+            elif query_type == 'recommendation':
                 results = self._handle_recommendation(user_message)
             elif query_type == 'comparison':
                 results = self._handle_comparison(user_message)
             elif query_type == 'genre_theme':
                 results = self._handle_genre_theme(user_message)
             else:
-                # POPRAWKA: Użyj standardowej metody search_with_scores
                 results = self.rag.search_with_scores(user_message, k=8, movie_id=None)
             
-            # Przygotuj kontekst - POPRAWKA: Jednolita struktura danych
+            # Wyodrębnij tytuły filmów z wyników
+            current_movies = list(set([r['section'].movie.title for r in results[:8]]))
+            
+            # Przygotuj kontekst z historią konwersacji
             context_parts = []
+            
+            # Dodaj ostatnie 2 wymianę wiadomości dla kontekstu
+            if conversation_history:
+                context_parts.append("=== Recent conversation context ===")
+                for msg in conversation_history[-4:]:  # Ostatnie 2 pary (user + assistant)
+                    context_parts.append(f"{msg['role'].upper()}: {msg['content'][:200]}")
+                context_parts.append("=== Current query context ===")
+            
+            # Dodaj wyniki wyszukiwania
             for r in results[:8]:
-                # Wszystkie metody zwracają dict ze 'section' key
                 section = r['section']
-                
                 context_parts.append(
                     f"[{section.movie.title} ({section.movie.year}) - {section.get_section_type_display()}]\n"
                     f"{section.content[:700]}"
@@ -47,16 +67,26 @@ class GlobalChatService:
             
             context = "\n\n---\n\n".join(context_parts)
             
-            # System prompt dla global chat
-            system_prompt = self._get_system_prompt(query_type, context)
+            # System prompt z uwzględnieniem kontekstu konwersacji
+            system_prompt = self._get_system_prompt(query_type, context, bool(conversation_history))
+            
+            # Przygotuj historię dla LLM (ostatnie 3 pary wiadomości)
+            messages = [{"role": "system", "content": system_prompt}]
+            
+            if conversation_history:
+                for msg in conversation_history[-6:]:  # Ostatnie 3 pary
+                    messages.append({
+                        "role": msg['role'],
+                        "content": msg['content']
+                    })
+            
+            # Dodaj aktualne pytanie
+            messages.append({"role": "user", "content": user_message})
             
             # Wywołaj LLM
             response = self.client.chat.completions.create(
                 model=self.model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_message}
-                ],
+                messages=messages,
                 max_tokens=500,
                 temperature=0.7
             )
@@ -70,19 +100,95 @@ class GlobalChatService:
             
             return {
                 'message': answer,
-                'sources': results[:8],  # POPRAWKA: Zwróć już sformatowane źródła
-                'query_type': query_type
+                'sources': results[:8],
+                'query_type': query_type,
+                'referenced_movies': current_movies  # Zwróć filmy do zapisania w conversation
             }
             
         except Exception as e:
             logger.error(f"Global chat error: {e}")
             import traceback
-            logger.error(traceback.format_exc())  # Dodaj pełny traceback
+            logger.error(traceback.format_exc())
             return {
                 'message': "Sorry, I encountered an error. Please try again.",
                 'sources': [],
-                'query_type': 'error'
+                'query_type': 'error',
+                'referenced_movies': []
             }
+
+    def _get_conversation_context(self, conversation_id):
+        """
+        Pobierz historię konwersacji i referenced movies
+        """
+        from chat.models import ChatConversation, ChatMessage
+        
+        try:
+            conversation = ChatConversation.objects.get(id=conversation_id)
+            messages = conversation.messages.all().order_by('created_at')
+            
+            history = [
+                {'role': msg.role, 'content': msg.content}
+                for msg in messages
+            ]
+            
+            referenced_movies = conversation.referenced_movies or []
+            
+            return history, referenced_movies
+        except:
+            return [], []
+
+    def _is_follow_up_question(self, message):
+        """
+        Sprawdź czy pytanie odnosi się do poprzedniego kontekstu
+        """
+        message_lower = message.lower()
+        
+        follow_up_indicators = [
+            'them', 'those', 'these', 'they', 'their',
+            'what about', 'tell me more', 'why',
+            'how about', 'and', 'also'
+        ]
+        
+        return any(indicator in message_lower for indicator in follow_up_indicators)
+
+    def _handle_follow_up(self, query, referenced_movies):
+        """
+        Obsłuż pytanie nawiązujące do poprzednich filmów
+        """
+        from movies.models import Movie
+        
+        # Znajdź filmy po tytułach
+        movies = Movie.objects.filter(title__in=referenced_movies)
+        movie_ids = [m.id for m in movies]
+        
+        if movie_ids:
+            # Wyszukaj w kontekście tych filmów
+            from reports.models import MovieSection
+            
+            query_embedding = self.rag.generate_embedding(query)
+            
+            queryset = MovieSection.objects.filter(
+                embedding__isnull=False,
+                movie_id__in=movie_ids
+            ).annotate(
+                distance=CosineDistance('embedding', query_embedding)
+            )
+            
+            results = list(queryset.order_by('distance')[:10])
+            
+            return [
+                {
+                    'section': section,
+                    'section_id': section.id,
+                    'similarity': 1.0 - section.distance,
+                    'movie_title': section.movie.title,
+                    'section_type': section.get_section_type_display()
+                }
+                for section in results
+            ]
+        else:
+            # Fallback do standardowego wyszukiwania
+            return self.rag.search_with_scores(query, k=8, movie_id=None)
         
     def _classify_query_type(self, query):
         """
