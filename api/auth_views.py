@@ -4,8 +4,11 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
+import logging
 
 from movies.serializers import UserSerializer, RegisterSerializer
+
+logger = logging.getLogger(__name__)
 
 
 @api_view(['POST'])
@@ -63,20 +66,30 @@ def login(request):
 
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([AllowAny])  # Allow logout even with expired/invalid tokens
 def logout(request):
-    """Logout user by blacklisting refresh token"""
+    """Logout user by blacklisting refresh token (if available)"""
     try:
         refresh_token = request.data.get('refresh_token')
-        token = RefreshToken(refresh_token)
-        token.blacklist()
         
+        if refresh_token:
+            try:
+                # Try to blacklist the token if blacklist app is installed
+                token = RefreshToken(refresh_token)
+                # Check if blacklist method is available
+                if hasattr(token, 'blacklist'):
+                    token.blacklist()
+            except Exception as e:
+                # If blacklist fails (app not installed or token invalid), 
+                # still allow logout since tokens are cleared client-side
+                # Log the error but don't fail the logout
+                logger.warning(f"Token blacklist failed (may not be configured): {str(e)}")
+        
+        # Always return success - tokens are cleared client-side anyway
         return Response({'message': 'Logout successful'})
     except Exception as e:
-        return Response(
-            {'error': str(e)},
-            status=status.HTTP_400_BAD_REQUEST
-        )
+        # Even if everything fails, return success since client clears tokens
+        return Response({'message': 'Logout successful'})
 
 
 @api_view(['GET'])
