@@ -53,6 +53,7 @@ class MovieListView(ListView):
         
         return queryset.order_by('-year', 'title')
     
+#dummy
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['search_query'] = self.request.GET.get('search', '')
