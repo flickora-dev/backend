@@ -15,13 +15,7 @@ DEBUG = os.getenv("DEBUG", "False").lower() == "true"
 
 ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', '*').split(',')
 
-# railway_domain = os.getenv("RAILWAY_PUBLIC_DOMAIN", "")
-# ALLOWED_HOSTS = [
-#     "localhost",
-#     "127.0.0.1",
-#     railway_domain,
-# ] + os.getenv("ALLOWED_HOSTS", "").split(",")
-# ALLOWED_HOSTS = [h for h in ALLOWED_HOSTS if h]
+
 
 cors_origins = os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:3000")
 if cors_origins == "*":
