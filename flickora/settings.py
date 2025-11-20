@@ -27,7 +27,7 @@ else:
 
 csrf_origins = os.getenv(
     "CSRF_TRUSTED_ORIGINS",
-    "http://localhost:5173,http://localhost:3000,https://flickora-production-7a6e.up.railway.app"
+    "http://localhost:5173,http://localhost:3000,https://backend-production-e1a7.up.railway.app/"
 )
 CSRF_TRUSTED_ORIGINS = [origin.strip() for origin in csrf_origins.split(",") if origin.strip()]
 
@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     "rest_framework",
     "rest_framework_simplejwt",
     "corsheaders",
+    "drf_yasg",  # Swagger/OpenAPI documentation
     "pgvector",
     "movies",
     "reports",
@@ -143,6 +144,21 @@ REST_FRAMEWORK = {
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 20,
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
+    "DEFAULT_SCHEMA_CLASS": "rest_framework.schemas.coreapi.AutoSchema",
+}
+
+# Swagger/OpenAPI Settings
+SWAGGER_SETTINGS = {
+    "SECURITY_DEFINITIONS": {
+        "Bearer": {
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header",
+        }
+    },
+    "USE_SESSION_AUTH": False,
+    "JSON_EDITOR": True,
+    "SUPPORTED_SUBMIT_METHODS": ["get", "post", "put", "patch", "delete"],
 }
 
 SIMPLE_JWT = {
