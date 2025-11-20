@@ -15,7 +15,7 @@ class GlobalChatService:
             base_url="https://openrouter.ai/api/v1",
             api_key=settings.OPENROUTER_API_KEY
         )
-        self.model = "deepseek/deepseek-chat-v3.1:free"
+        self.model = "x-ai/grok-4.1-fast"
         self.rag = RAGService()
     
     import openai
@@ -33,8 +33,8 @@ class GlobalChatService:
             base_url="https://openrouter.ai/api/v1",
             api_key=settings.OPENROUTER_API_KEY
         )
-        self.model = "deepseek/deepseek-chat-v3.1:free"
-        
+        self.model = "x-ai/grok-4.1-fast"
+
         # Use optimized RAG service
         self.rag = OptimizedRAGService()
         self.memory = ConversationMemoryManager()

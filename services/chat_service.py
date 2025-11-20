@@ -13,8 +13,7 @@ class ChatService:
             base_url="https://openrouter.ai/api/v1",
             api_key=settings.OPENROUTER_API_KEY
         )
-        self.model = "deepseek/deepseek-chat-v3.1:free"
-        # self.model = "google/gemma-3-4b-it:free"
+        self.model = "x-ai/grok-4.1-fast"
 
         self.rag = RAGService()
         self.global_chat = GlobalChatService()
