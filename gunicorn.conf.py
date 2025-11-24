@@ -12,9 +12,10 @@ bind = f"0.0.0.0:{os.getenv('PORT', '8000')}"
 # Use 2-4 workers for better concurrency
 workers = int(os.getenv('GUNICORN_WORKERS', 2))
 
-# Worker class - use uvicorn for async support
+# Worker class - use gevent for async support with WSGI
 # This improves performance for I/O-bound operations (database, API calls)
-worker_class = "uvicorn.workers.UvicornWorker"
+# Note: Django is WSGI, not ASGI, so we use gevent instead of uvicorn
+worker_class = "gevent"
 
 # Timeout - increase for long RAG queries
 timeout = 120
