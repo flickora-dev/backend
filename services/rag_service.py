@@ -7,36 +7,19 @@ from reports.models import MovieSection
 
 logger = logging.getLogger(__name__)
 
-# Global model instance and lock for thread safety
-_model = None
-_model_lock = threading.Lock()
-
 
 class RAGService:
     def __init__(self):
         self.model_name = "sentence-transformers/all-MiniLM-L6-v2"
         self.embedding_dim = 384
+        # Use shared singleton from OptimizedRAGService to avoid loading model twice
+        from services.optimized_rag_service import _ModelSingleton
+        self._models = _ModelSingleton()
 
     def load_model(self):
-        global _model
-        
-        # Use global singleton model to avoid concurrent loading issues
-        if _model is None:
-            with _model_lock:
-                # Double-check after acquiring lock
-                if _model is None:
-                    logger.info(f"Loading embedding model: {self.model_name}")
-                    try:
-                        # Simple initialization without device specification
-                        _model = SentenceTransformer(self.model_name)
-                        _model.eval()
-                        logger.info("Model loaded successfully")
-                    except Exception as e:
-                        logger.error(f"Error loading model: {e}")
-                        raise
-        
-        return _model
-    
+        """Return pre-loaded model from singleton"""
+        return self._models.embedder
+
     def generate_embedding(self, text):
         try:
             model = self.load_model()
