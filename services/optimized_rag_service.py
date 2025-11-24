@@ -8,31 +8,65 @@ import logging
 logger = logging.getLogger(__name__)
 
 
+class _ModelSingleton:
+    """
+    Singleton to load models once and reuse them
+    """
+    _instance = None
+    _embedder = None
+    _reranker = None
+    _use_reranking = False
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(_ModelSingleton, cls).__new__(cls)
+            cls._instance._load_models()
+        return cls._instance
+
+    def _load_models(self):
+        """Load models once"""
+        if self._embedder is None:
+            logger.info("Loading embedding model: sentence-transformers/all-MiniLM-L6-v2")
+            self._embedder = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+            logger.info("Model loaded successfully")
+
+        if self._reranker is None:
+            logger.info("Loading cross-encoder for re-ranking...")
+            try:
+                self._reranker = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
+                self._use_reranking = True
+                logger.info("Cross-encoder loaded - expect ~25% improvement in relevance")
+            except Exception as e:
+                logger.warning(f"Cross-encoder not available: {e}")
+                self._use_reranking = False
+
+    @property
+    def embedder(self):
+        return self._embedder
+
+    @property
+    def reranker(self):
+        return self._reranker
+
+    @property
+    def use_reranking(self):
+        return self._use_reranking
+
+
 class OptimizedRAGService:
     """
     Zoptymalizowany RAG service dla global chat
     Step 1-7 z optimization guide
+    Uses singleton pattern to avoid reloading models
     """
-    
+
     def __init__(self):
-        # Step 1: Użyj modelu zgodnego z bazą (384d)
-        logger.info("Loading embedding model: all-MiniLM-L6-v2 (384d)")
-        self.embedder = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+        # Get singleton instance with pre-loaded models
+        self._models = _ModelSingleton()
+        self.embedder = self._models.embedder
+        self.reranker = self._models.reranker
+        self.use_reranking = self._models.use_reranking
         self.embedding_dim = 384
-        logger.info("Model loaded: all-MiniLM-L6-v2 (384 dimensions)")
-        
-        # Step 2: Cross-encoder for re-ranking (to da największą poprawę!)
-        logger.info("Loading cross-encoder for re-ranking...")
-        try:
-            self.reranker = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
-            self.use_reranking = True
-            logger.info("Cross-encoder loaded - expect ~25% improvement in relevance")
-        except Exception as e:
-            logger.warning(f"Cross-encoder not available: {e}")
-            logger.warning("Install with: pip install sentence-transformers")
-            self.use_reranking = False
-        
-        # Step 4: TF-IDF for hybrid embeddings (opcjonalne - wyłączone dla prostoty)
         self.use_hybrid = False
         
     
@@ -42,9 +76,10 @@ class OptimizedRAGService:
         """
         try:
             embedding = self.embedder.encode(
-                text, 
+                text,
                 normalize_embeddings=True,  # Normalizacja dla lepszej cosine distance
-                show_progress_bar=False
+                show_progress_bar=False,
+                convert_to_numpy=True
             )
             return embedding.tolist()
         except Exception as e:
