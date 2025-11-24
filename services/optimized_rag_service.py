@@ -30,7 +30,12 @@ class _ModelSingleton:
             self._embedder = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
             logger.info("Model loaded successfully")
 
-        if self._reranker is None:
+        # CrossEncoder disabled for performance (saves 1-2s per query)
+        # Only provides ~20-25% relevance improvement on CPU
+        # Re-enable by setting USE_RERANKER = True if needed
+        USE_RERANKER = False
+
+        if USE_RERANKER and self._reranker is None:
             logger.info("Loading cross-encoder for re-ranking...")
             try:
                 self._reranker = CrossEncoder('cross-encoder/ms-marco-MiniLM-L-6-v2')
@@ -39,6 +44,8 @@ class _ModelSingleton:
             except Exception as e:
                 logger.warning(f"Cross-encoder not available: {e}")
                 self._use_reranking = False
+        else:
+            logger.info("Cross-encoder disabled for performance (saves 1-2s per query)")
 
     @property
     def embedder(self):
