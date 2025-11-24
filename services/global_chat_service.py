@@ -16,7 +16,7 @@ class GlobalChatService:
             api_key=settings.OPENROUTER_API_KEY
         )
 
-        self.model = "tngtech/deepseek-r1t2-chimera:free"
+        self.model = "meta-llama/llama-3.3-70b-instruct:free"
 
         # Use optimized RAG service
         self.rag = OptimizedRAGService()
