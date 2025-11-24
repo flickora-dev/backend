@@ -43,12 +43,15 @@ class GlobalChatService:
         """
         Optimized global chat with all improvements
         """
+        import time
+        start_time = time.time()
+
         try:
             # Step 5: Get conversation context
             conversation_context = None
             referenced_movies = []
             system_prompt_sent = False
-            
+
             if conversation_id:
                 conversation_context = self.memory.get_conversation_context(conversation_id, n_messages=5)
                 referenced_movies = self.memory.get_referenced_movies(conversation_id)
@@ -59,15 +62,16 @@ class GlobalChatService:
                     system_prompt_sent = conv.system_prompt_sent
                 except:
                     pass
-            
+
             # Classify query type
             query_type = self._classify_query_type(user_message, conversation_context)
-            
+
             # Step 1, 2, 5: Optimized RAG search with:
             # - k=10 (vs 5)
             # - min_similarity=0.30
             # - conversation_context for better embeddings
-            # - cross-encoder re-ranking
+            # - cross-encoder re-ranking DISABLED for speed
+            rag_start = time.time()
             results = self.rag.search_with_scores(
                 user_message,
                 k=10,
@@ -75,6 +79,8 @@ class GlobalChatService:
                 movie_id=None,
                 conversation_context=conversation_context
             )
+            rag_time = time.time() - rag_start
+            logger.info(f"RAG search took: {rag_time:.2f}s")
             
             logger.info(f"Retrieved {len(results)} sections with avg similarity: "
                        f"{np.mean([r['similarity'] for r in results]):.3f}")
@@ -127,6 +133,7 @@ class GlobalChatService:
             
             # Step 6: Tuned model parameters
             try:
+                llm_start = time.time()
                 response = self.client.chat.completions.create(
                     model=self.model,
                     messages=messages,
@@ -136,12 +143,14 @@ class GlobalChatService:
                     presence_penalty=0.3,  # Avoid repetition
                     frequency_penalty=0.3
                 )
-                
+                llm_time = time.time() - llm_start
+                logger.info(f"LLM API call took: {llm_time:.2f}s")
+
                 if not response or not response.choices:
                     raise ValueError("Empty response")
-                
+
                 answer = response.choices[0].message.content.strip()
-                
+
             except Exception as api_error:
                 logger.error(f"OpenRouter API error: {api_error}")
                 answer = self._generate_fallback_response(query_type, results[:3])
@@ -150,7 +159,10 @@ class GlobalChatService:
             sentences = re.split(r'(?<=[.!?])\s+', answer)
             if len(sentences) > 8:
                 answer = '. '.join(sentences[:8]) + '.'
-            
+
+            total_time = time.time() - start_time
+            logger.info(f"Total chat response time: {total_time:.2f}s")
+
             return {
                 'message': answer,
                 'sources': results[:8],
@@ -160,7 +172,10 @@ class GlobalChatService:
                 'metrics': {  # Step 7: Evaluation metrics
                     'avg_similarity': float(np.mean([r['similarity'] for r in results[:8]])),
                     'num_sources': len(results),
-                    'num_movies': len(current_movies)
+                    'num_movies': len(current_movies),
+                    'rag_time': rag_time,
+                    'llm_time': llm_time if 'llm_time' in locals() else 0,
+                    'total_time': total_time
                 }
             }
             

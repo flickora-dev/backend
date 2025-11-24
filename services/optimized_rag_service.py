@@ -86,32 +86,32 @@ class OptimizedRAGService:
             logger.error(f"Error generating embedding: {e}")
             raise
     
-    def search_optimized(self, query, k=10, min_similarity=0.30, movie_id=None, 
-                         use_reranking=True, conversation_context=None):
+    def search_optimized(self, query, k=10, min_similarity=0.30, movie_id=None,
+                         use_reranking=False, conversation_context=None):
         """
         Step 1, 2, 5: Optimized search with:
         - Higher k (8-12 vs 5)
         - Minimum similarity threshold (0.25-0.35)
-        - Cross-encoder re-ranking
+        - Cross-encoder re-ranking (DISABLED by default for speed)
         - Conversation context
-        
+
         Args:
             query: User query
             k: Number of results (8-12 recommended)
             min_similarity: Minimum cosine similarity (0.25-0.35)
             movie_id: Optional movie filter
-            use_reranking: Use cross-encoder re-ranking
+            use_reranking: Use cross-encoder re-ranking (slow, disabled by default)
             conversation_context: Last N messages for context
         """
         from reports.models import MovieSection
-        
+
         # Step 5: Include conversation context in embedding
         enhanced_query = query
         if conversation_context:
             enhanced_query = f"{conversation_context}\n\nCurrent question: {query}"
-        
+
         query_embedding = self.generate_embedding(enhanced_query)
-        
+
         # Step 1: Retrieve with higher k for re-ranking
         initial_k = k * 2 if use_reranking and self.use_reranking else k
         
