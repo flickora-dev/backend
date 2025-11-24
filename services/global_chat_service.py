@@ -181,7 +181,7 @@ class GlobalChatService:
         """
         Step 3: Structured prompt engineering
         """
-        base = """You are CineChat — an intelligent movie analyst assistant.
+        base = """You are flickora — an intelligent movie analyst assistant.
 
         Guidelines:
         - Answer using ONLY the provided context snippets
