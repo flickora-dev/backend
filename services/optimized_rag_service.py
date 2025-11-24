@@ -68,20 +68,37 @@ class OptimizedRAGService:
         self.use_reranking = self._models.use_reranking
         self.embedding_dim = 384
         self.use_hybrid = False
+        # Simple LRU cache for embeddings (last 100 queries)
+        self._embedding_cache = {}
         
     
     def generate_embedding(self, text):
         """
-        Step 1: Generate normalized embeddings
+        Step 1: Generate normalized embeddings with caching
         """
         try:
+            # Check cache first (for identical queries)
+            cache_key = hash(text[:500])  # Hash first 500 chars
+            if cache_key in self._embedding_cache:
+                logger.debug("Using cached embedding")
+                return self._embedding_cache[cache_key]
+
+            # Generate new embedding
             embedding = self.embedder.encode(
                 text,
                 normalize_embeddings=True,  # Normalizacja dla lepszej cosine distance
                 show_progress_bar=False,
                 convert_to_numpy=True
             )
-            return embedding.tolist()
+            result = embedding.tolist()
+
+            # Cache it (simple LRU: keep last 100)
+            if len(self._embedding_cache) > 100:
+                # Remove oldest (first) item
+                self._embedding_cache.pop(next(iter(self._embedding_cache)))
+            self._embedding_cache[cache_key] = result
+
+            return result
         except Exception as e:
             logger.error(f"Error generating embedding: {e}")
             raise
