@@ -1,28 +1,10 @@
 import openai
 from django.conf import settings
-from services.rag_service import RAGService
-import logging
-import re
+from services.optimized_rag_service import OptimizedRAGService, ConversationMemoryManager
 from pgvector.django import CosineDistance
-from services.optimized_rag_service import OptimizedRAGService, ConversationMemoryManager
-import numpy as np
-logger = logging.getLogger(__name__)
-
-
-class GlobalChatService:
-    def __init__(self):
-        self.client = openai.OpenAI(
-            base_url="https://openrouter.ai/api/v1",
-            api_key=settings.OPENROUTER_API_KEY
-        )
-        self.model = "x-ai/grok-4.1-fast"
-        self.rag = RAGService()
-    
-    import openai
-from django.conf import settings
-from services.optimized_rag_service import OptimizedRAGService, ConversationMemoryManager
 import logging
 import re
+import numpy as np
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +15,8 @@ class GlobalChatService:
             base_url="https://openrouter.ai/api/v1",
             api_key=settings.OPENROUTER_API_KEY
         )
-        self.model = "x-ai/grok-4.1-fast"
+
+        self.model = "tngtech/deepseek-r1t2-chimera:free"
 
         # Use optimized RAG service
         self.rag = OptimizedRAGService()
