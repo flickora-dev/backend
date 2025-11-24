@@ -19,25 +19,32 @@ class ChatService:
         self.global_chat = GlobalChatService()
         
     def chat(self, user_message, movie_id=None):
+        import time
+        start_time = time.time()
+
         if not movie_id:
             return self.global_chat.chat(user_message)
-        
+
+        # RAG search with timing
+        rag_start = time.time()
         if movie_id:
             results = self.rag.search_with_scores(user_message, k=3, movie_id=movie_id)
         else:
             results = self.rag.search_with_scores(user_message, k=5, movie_id=None)
-        
+        rag_time = time.time() - rag_start
+        logger.info(f"RAG search took: {rag_time:.2f}s (k={3 if movie_id else 5})")
+
         sections = [r['section'] for r in results]
-        
+
         context_parts = []
         for s in sections:
             content_length = self._get_context_length(s.section_type, movie_id)
-            
+
             context_parts.append(
                 f"[{s.movie.title} - {s.get_section_type_display()}]\n"
                 f"{s.content[:content_length]}"
             )
-        
+
         context = "\n\n---\n\n".join(context_parts)
         
         if movie_id:
@@ -73,6 +80,7 @@ CRITICAL RULES:
 Answer based STRICTLY on this context."""
         
         try:
+            llm_start = time.time()
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=[
@@ -83,18 +91,23 @@ Answer based STRICTLY on this context."""
                 temperature=0.7,
                 top_p=0.9
             )
-            
+            llm_time = time.time() - llm_start
+            logger.info(f"LLM API call took: {llm_time:.2f}s")
+
             answer = response.choices[0].message.content.strip()
-            
+
             answer = re.sub(r'<[｜|][^>]*[｜|]>', '', answer)
             answer = re.sub(r'</?s>', '', answer)
             answer = re.sub(r'<</?SYS>>', '', answer)
             answer = answer.strip()
-            
+
             sentences = answer.split('. ')
             if len(sentences) > 6:
                 answer = '. '.join(sentences[:6]) + '.'
-            
+
+            total_time = time.time() - start_time
+            logger.info(f"Total movie chat response time: {total_time:.2f}s (RAG: {rag_time:.2f}s, LLM: {llm_time:.2f}s)")
+
             return {
                 'message': answer,
                 'sources': results
