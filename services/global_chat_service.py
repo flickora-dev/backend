@@ -534,3 +534,171 @@ class GlobalChatService:
         Obsługa zapytań o gatunki i tematy
         """
         return self.rag.search_by_genre_or_theme(query, k=10)
+
+    def chat_stream(self, user_message, conversation_id=None):
+        """
+        Streaming version of chat - yields Server-Sent Events
+        Provides better perceived performance by streaming LLM response
+        """
+        import time
+        import json
+
+        start_time = time.time()
+
+        try:
+            # Step 1: Get conversation context
+            conversation_context = None
+            referenced_movies = []
+            system_prompt_sent = False
+
+            if conversation_id:
+                conversation_context = self.memory.get_conversation_context(conversation_id, n_messages=5)
+                referenced_movies = self.memory.get_referenced_movies(conversation_id)
+                from chat.models import ChatConversation
+                try:
+                    conv = ChatConversation.objects.get(id=conversation_id)
+                    system_prompt_sent = conv.system_prompt_sent
+                except:
+                    pass
+
+            # Step 2: Classify query type
+            query_type = self._classify_query_type(user_message, conversation_context)
+
+            # Step 3: RAG search (send progress event)
+            yield f"data: {json.dumps({'type': 'rag_start'})}\n\n"
+
+            rag_start = time.time()
+            results = self.rag.search_with_scores(
+                user_message,
+                k=10,
+                min_similarity=0.30,
+                movie_id=None,
+                conversation_context=conversation_context
+            )
+            rag_time = time.time() - rag_start
+
+            # Send sources event
+            sources_data = [{
+                'section_id': r['section_id'],
+                'similarity': r['similarity'],
+                'movie_title': r['movie_title'],
+                'section_type': r['section_type']
+            } for r in results[:8]]
+
+            yield f"data: {json.dumps({'type': 'sources', 'sources': sources_data})}\n\n"
+
+            logger.info(f"RAG search took: {rag_time:.2f}s")
+
+            # Extract movie titles
+            current_movies = list(set([r['section'].movie.title for r in results[:8]]))
+
+            # Step 4: Build context and messages
+            context_parts = []
+            for i, r in enumerate(results[:8], 1):
+                section = r['section']
+                similarity = r['similarity']
+                context_parts.append(
+                    f"[Source {i}] {section.movie.title} ({section.movie.year}) "
+                    f"- {section.get_section_type_display()} [Relevance: {similarity:.2f}]\n"
+                    f"{section.content[:600]}"
+                )
+
+            context = "\n\n---\n\n".join(context_parts)
+
+            messages = []
+            if not system_prompt_sent:
+                system_prompt = self._get_structured_system_prompt(query_type)
+                messages.append({"role": "system", "content": system_prompt})
+
+            user_prompt = f"""User Question:
+{user_message}
+
+Relevant Context from Movie Database:
+{context}
+
+Please provide a concise answer (max 200 words) that:
+- Mentions specific movie titles explicitly
+- Synthesizes insights across multiple films if relevant
+- States uncertainty if the context doesn't fully answer the question"""
+
+            messages.append({"role": "user", "content": user_prompt})
+
+            # Step 5: Stream LLM response
+            yield f"data: {json.dumps({'type': 'llm_start'})}\n\n"
+
+            llm_start = time.time()
+            full_response = ""
+
+            try:
+                stream = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    max_tokens=300,
+                    temperature=0.6,
+                    top_p=0.9,
+                    presence_penalty=0.3,
+                    frequency_penalty=0.3,
+                    stream=True  # Enable streaming
+                )
+
+                for chunk in stream:
+                    if chunk.choices and chunk.choices[0].delta.content:
+                        content = chunk.choices[0].delta.content
+                        full_response += content
+                        # Send each chunk to client
+                        yield f"data: {json.dumps({'type': 'content', 'content': content})}\n\n"
+
+                llm_time = time.time() - llm_start
+                logger.info(f"LLM streaming took: {llm_time:.2f}s")
+
+            except Exception as api_error:
+                logger.error(f"OpenRouter API error: {api_error}")
+                fallback = self._generate_fallback_response(query_type, results[:3])
+                yield f"data: {json.dumps({'type': 'content', 'content': fallback})}\n\n"
+                full_response = fallback
+                llm_time = time.time() - llm_start
+
+            # Limit response length
+            sentences = re.split(r'(?<=[.!?])\s+', full_response)
+            if len(sentences) > 8:
+                full_response = '. '.join(sentences[:8]) + '.'
+
+            total_time = time.time() - start_time
+
+            # Send completion event with metadata
+            metadata = {
+                'type': 'done',
+                'message': full_response,
+                'query_type': query_type,
+                'referenced_movies': current_movies,
+                'is_first_message': not system_prompt_sent,
+                'metrics': {
+                    'avg_similarity': float(np.mean([r['similarity'] for r in results[:8]])),
+                    'num_sources': len(results),
+                    'num_movies': len(current_movies),
+                    'rag_time': rag_time,
+                    'llm_time': llm_time,
+                    'total_time': total_time
+                }
+            }
+            yield f"data: {json.dumps(metadata)}\n\n"
+
+            logger.info(f"Total streaming chat response time: {total_time:.2f}s")
+
+        except Exception as e:
+            logger.error(f"Global chat streaming error: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            error_data = {
+                'type': 'error',
+                'message': 'Sorry, I encountered an error. Please try again.'
+            }
+            yield f"data: {json.dumps(error_data)}\n\n"
+
+    def _generate_fallback_response(self, query_type, results):
+        """Generate fallback response when LLM fails"""
+        if not results:
+            return "I couldn't find relevant information in our movie database. Please try rephrasing your question."
+
+        movies = list(set([r['section'].movie.title for r in results[:3]]))
+        return f"Based on our database, you might be interested in: {', '.join(movies)}. Please ask a more specific question for detailed insights."
