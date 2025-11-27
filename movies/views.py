@@ -2,8 +2,11 @@ from django.shortcuts import render, get_object_or_404, redirect
 from django.views.generic import ListView, DetailView, TemplateView, CreateView
 from django.contrib.auth.views import LoginView, LogoutView
 from django.contrib.auth import login
-from django.db.models import Q, Count
+from django.db.models import Q, Count, F
 from django.urls import reverse_lazy
+from django.http import JsonResponse
+from django.views.decorators.http import require_GET
+from django.views.decorators.csrf import csrf_exempt
 from .models import Movie, Genre, MovieView
 from .forms import RegisterForm, LoginForm
 
