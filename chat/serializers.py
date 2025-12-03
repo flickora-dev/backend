@@ -13,15 +13,26 @@ class ChatMessageSerializer(serializers.ModelSerializer):
 
 class ChatConversationSerializer(serializers.ModelSerializer):
     messages = ChatMessageSerializer(many=True, read_only=True)
-    movie_title = serializers.CharField(source='movie.title', read_only=True, allow_null=True)
-    
+    movie = serializers.SerializerMethodField()
+
     class Meta:
         model = ChatConversation
         fields = [
-            'id', 'conversation_type', 'movie', 'movie_title',
-            'created_at', 'updated_at', 'messages'
+            'id', 'conversation_type', 'movie',
+            'created_at', 'updated_at', 'messages', 'referenced_movies'
         ]
         read_only_fields = ['created_at', 'updated_at']
+
+    def get_movie(self, obj):
+        """Include movie details if this is a movie conversation"""
+        if obj.movie:
+            return {
+                'id': obj.movie.id,
+                'title': obj.movie.title,
+                'year': obj.movie.year,
+                'poster_url': obj.movie.poster_url,
+            }
+        return None
 
 
 class ChatRequestSerializer(serializers.Serializer):

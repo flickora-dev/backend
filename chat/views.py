@@ -1,7 +1,8 @@
 from django.http import JsonResponse, StreamingHttpResponse
-from django.views.decorators.http import require_POST
+from django.views.decorators.http import require_POST, require_http_methods
 import json
 from .models import ChatConversation, ChatMessage
+from .serializers import ChatConversationSerializer
 from services.chat_service import ChatService
 from django.views.decorators.csrf import csrf_exempt
 import logging
@@ -219,6 +220,75 @@ def chat_message_stream(request):
 
     except json.JSONDecodeError:
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
+    except Exception as e:
+        import traceback
+        logger.error(traceback.format_exc())
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_conversations(request):
+    """
+    Get all conversations for the current user
+    """
+    try:
+        # For now, get all conversations (in production, filter by user)
+        conversations = ChatConversation.objects.all().order_by('-updated_at')
+
+        # Serialize conversations with related data
+        serializer = ChatConversationSerializer(conversations, many=True)
+
+        return JsonResponse({
+            'data': serializer.data,
+            'count': conversations.count()
+        })
+
+    except Exception as e:
+        import traceback
+        logger.error(traceback.format_exc())
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["GET"])
+def get_conversation_detail(request, conversation_id):
+    """
+    Get detailed view of a specific conversation with all messages
+    """
+    try:
+        conversation = ChatConversation.objects.get(id=conversation_id)
+        serializer = ChatConversationSerializer(conversation)
+
+        return JsonResponse({
+            'data': serializer.data
+        })
+
+    except ChatConversation.DoesNotExist:
+        return JsonResponse({'error': 'Conversation not found'}, status=404)
+    except Exception as e:
+        import traceback
+        logger.error(traceback.format_exc())
+        return JsonResponse({'error': str(e)}, status=500)
+
+
+@csrf_exempt
+@require_http_methods(["DELETE"])
+def delete_conversation(request, conversation_id):
+    """
+    Delete a conversation and all its messages
+    """
+    try:
+        conversation = ChatConversation.objects.get(id=conversation_id)
+        conversation.delete()
+
+        return JsonResponse({
+            'success': True,
+            'message': 'Conversation deleted successfully'
+        })
+
+    except ChatConversation.DoesNotExist:
+        return JsonResponse({'error': 'Conversation not found'}, status=404)
     except Exception as e:
         import traceback
         logger.error(traceback.format_exc())

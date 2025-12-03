@@ -6,10 +6,10 @@ from movies.models import Movie, Genre
 from reports.models import MovieSection
 from services.tmdb_service import TMDBService
 from services.openrouter_service import OpenRouterService
-from services.rag_service import RAGService
+from services.mongodb_rag_service import MongoDBRAGService
+from reports.mongodb_models import MovieSectionMongoDB
 import json
 import logging
-from django.http import JsonResponse
 
 def health(request):
     return JsonResponse({"status": "ok"})
@@ -133,44 +133,67 @@ def generate_section(request):
 @csrf_exempt
 @require_http_methods(["POST"])
 def generate_embedding(request):
+    """
+    Generate embedding and save to MongoDB ONLY (not PostgreSQL).
+    """
     try:
         data = json.loads(request.body)
         section_id = data.get('section_id')
-        
+
         if not section_id:
             return JsonResponse({'error': 'section_id required'}, status=400)
-        
+
         section = MovieSection.objects.get(id=section_id)
-        
-        if section.embedding is not None and len(section.embedding) > 0:
-            return JsonResponse({'error': 'Embedding already exists'}, status=400)
-        
-        rag = RAGService()
-        
+
+        # Check if embedding exists in MongoDB
+        existing = MovieSectionMongoDB.get_by_movie_and_type(
+            movie_id=section.movie_id,
+            section_type=section.section_type
+        )
+
+        if existing and existing.get('embedding'):
+            return JsonResponse({'error': 'Embedding already exists in MongoDB'}, status=400)
+
+        rag = MongoDBRAGService()
+
         try:
-            logger.info(f"Generating embedding for section {section_id}")
+            logger.info(f"Generating embedding for section {section_id} → MongoDB")
             embedding = rag.generate_embedding(section.content)
-            
-            section.embedding = embedding
-            section.save(update_fields=['embedding'])
-            
-            logger.info(f"Successfully generated embedding for section {section_id}")
-            
+
+            # Create or update in MongoDB (ONLY EMBEDDING - no content!)
+            if existing:
+                # Update existing document with embedding
+                MovieSectionMongoDB.update_embedding(
+                    movie_id=section.movie_id,
+                    section_type=section.section_type,
+                    embedding=embedding
+                )
+                logger.info(f"Updated embedding in MongoDB for section {section_id}")
+            else:
+                # Create new document in MongoDB (embedding only)
+                doc_id = MovieSectionMongoDB.create(
+                    movie_id=section.movie_id,
+                    section_type=section.section_type,
+                    embedding=embedding
+                )
+                logger.info(f"Created new MongoDB embedding {doc_id} for section {section_id}")
+
             return JsonResponse({
                 'success': True,
                 'section_id': section.id,
-                'embedding_dimensions': len(embedding) if embedding is not None else 0
+                'embedding_dimensions': len(embedding) if embedding is not None else 0,
+                'storage': 'mongodb'
             })
-            
+
         except Exception as e:
             logger.error(f"Error generating embedding for section {section_id}: {e}")
             import traceback
             logger.error(f"Traceback: {traceback.format_exc()}")
-            
+
             return JsonResponse({
                 'error': f'Embedding generation failed: {str(e)}'
             }, status=500)
-        
+
     except MovieSection.DoesNotExist:
         return JsonResponse({'error': 'Section not found'}, status=404)
     except Exception as e:
