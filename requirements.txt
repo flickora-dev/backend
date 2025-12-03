@@ -26,8 +26,6 @@ openai==1.58.1
 sentence-transformers==3.3.1
 pgvector==0.3.6
 transformers==4.56.1
-pymongo==4.10.1
-dnspython==2.7.0
 
 # ==========================================
 # DATA PROCESSING (Python 3.11+ compatible)

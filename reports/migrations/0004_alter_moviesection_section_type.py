@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("reports", "0002_moviesection_embedding"),
+        ("reports", "0003_alter_moviesection_embedding"),
     ]
 
     operations = [

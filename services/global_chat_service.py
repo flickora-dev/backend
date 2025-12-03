@@ -1,6 +1,7 @@
 import openai
 from django.conf import settings
-from services.optimized_mongodb_rag_service import OptimizedMongoDBRAGService, ConversationMemoryManager
+from services.optimized_rag_service import OptimizedRAGService, ConversationMemoryManager
+from pgvector.django import CosineDistance
 import logging
 import re
 import numpy as np
@@ -17,8 +18,8 @@ class GlobalChatService:
 
         self.model = "meta-llama/llama-3.3-70b-instruct:free"
 
-        # Use MongoDB optimized RAG service
-        self.rag = OptimizedMongoDBRAGService()
+        # Use optimized RAG service
+        self.rag = OptimizedRAGService()
         self.memory = ConversationMemoryManager()
     
     def chat(self, user_message, conversation_id=None):
@@ -236,59 +237,38 @@ class GlobalChatService:
 
     def _handle_follow_up(self, query, referenced_movies):
         """
-        Obsłuż pytanie nawiązujące do poprzednich filmów - używa MongoDB
+        Obsłuż pytanie nawiązujące do poprzednich filmów
         """
         from movies.models import Movie
-
+        
         # Znajdź filmy po tytułach
         movies = Movie.objects.filter(title__in=referenced_movies)
         movie_ids = [m.id for m in movies]
-
+        
         if movie_ids:
-            # Wyszukaj w MongoDB w kontekście tych filmów
-            from reports.mongodb_models import MovieSectionMongoDB
-
-            query_embedding = self.rag.generate_embedding(query)
-
-            # Przeszukaj wszystkie filmy i przefiltruj po movie_ids
-            all_results = MovieSectionMongoDB.vector_search(
-                query_embedding=query_embedding,
-                k=50,  # Pobierz więcej, potem przefiltrujemy
-                min_similarity=0.30
-            )
-
-            # Filtruj wyniki po movie_ids
-            filtered_results = [r for r in all_results if r['movie_id'] in movie_ids][:10]
-
-            # Pobierz content z PostgreSQL (MongoDB ma tylko embeddingi!)
+            # Wyszukaj w kontekście tych filmów
             from reports.models import MovieSection
-
-            sections_dict = {}
-            for result in filtered_results:
-                key = (result['movie_id'], result['section_type'])
-                if key not in sections_dict:
-                    try:
-                        section = MovieSection.objects.get(
-                            movie_id=result['movie_id'],
-                            section_type=result['section_type']
-                        )
-                        sections_dict[key] = section
-                    except MovieSection.DoesNotExist:
-                        sections_dict[key] = None
-
-            movies_dict = {m.id: m for m in movies}
-
+            
+            query_embedding = self.rag.generate_embedding(query)
+            
+            queryset = MovieSection.objects.filter(
+                embedding__isnull=False,
+                movie_id__in=movie_ids
+            ).annotate(
+                distance=CosineDistance('embedding', query_embedding)
+            )
+            
+            results = list(queryset.order_by('distance')[:10])
+            
             return [
                 {
-                    'section_id': str(result['_id']),
-                    'similarity': result['similarity'],
-                    'movie_id': result['movie_id'],
-                    'movie_title': movies_dict.get(result['movie_id']).title if result['movie_id'] in movies_dict else 'Unknown',
-                    'section_type': result['section_type'],
-                    'content': sections_dict.get((result['movie_id'], result['section_type'])).content if sections_dict.get((result['movie_id'], result['section_type'])) else ''
+                    'section': section,
+                    'section_id': section.id,
+                    'similarity': 1.0 - section.distance,
+                    'movie_title': section.movie.title,
+                    'section_type': section.get_section_type_display()
                 }
-                for result in filtered_results
-                if sections_dict.get((result['movie_id'], result['section_type']))  # Skip if no content
+                for section in results
             ]
         else:
             # Fallback do standardowego wyszukiwania

@@ -1,6 +1,6 @@
 import openai
 from django.conf import settings
-from services.mongodb_rag_service import MongoDBRAGService
+from services.rag_service import RAGService
 import logging
 import re
 from services.global_chat_service import GlobalChatService
@@ -16,7 +16,7 @@ class ChatService:
 
         self.model = "meta-llama/llama-3.3-70b-instruct:free"
 
-        self.rag = MongoDBRAGService()
+        self.rag = RAGService()
         self.global_chat = GlobalChatService()
         
     def chat(self, user_message, movie_id=None):
@@ -35,14 +35,15 @@ class ChatService:
         rag_time = time.time() - rag_start
         logger.info(f"RAG search took: {rag_time:.2f}s (k={3 if movie_id else 5})")
 
-        # MongoDB RAG returns flat dictionaries, not section objects
+        sections = [r['section'] for r in results]
+
         context_parts = []
-        for r in results:
-            content_length = self._get_context_length(r['section_type'], movie_id)
+        for s in sections:
+            content_length = self._get_context_length(s.section_type, movie_id)
 
             context_parts.append(
-                f"[{r['movie_title']} - {r['section_type'].replace('_', ' ').title()}]\n"
-                f"{r['content'][:content_length]}"
+                f"[{s.movie.title} - {s.get_section_type_display()}]\n"
+                f"{s.content[:content_length]}"
             )
 
         context = "\n\n---\n\n".join(context_parts)
@@ -149,14 +150,13 @@ Answer based STRICTLY on this context."""
         """
         result = self.chat(message, movie_id)
 
-        # MongoDB RAG already returns flat dictionaries
         sources = []
         for r in result['sources']:
             sources.append({
-                'section_id': r['section_id'],
+                'section_id': r['section'].id,
                 'similarity': r['similarity'],
-                'movie_title': r['movie_title'],
-                'section_type': r['section_type'].replace('_', ' ').title()
+                'movie_title': r['section'].movie.title,
+                'section_type': r['section'].get_section_type_display()
             })
 
         return {
@@ -189,24 +189,25 @@ Answer based STRICTLY on this context."""
 
             logger.info(f"RAG search took: {rag_time:.2f}s (k=3)")
 
-            # Send sources event - MongoDB RAG returns flat dictionaries
+            # Send sources event
             sources_data = [{
                 'section_id': r['section_id'],
                 'similarity': r['similarity'],
                 'movie_title': r['movie_title'],
-                'section_type': r['section_type'].replace('_', ' ').title()
+                'section_type': r['section_type']
             } for r in results]
 
             yield f"data: {json.dumps({'type': 'sources', 'sources': sources_data})}\n\n"
 
-            # Step 2: Build context from MongoDB results
+            # Step 2: Build context
+            sections = [r['section'] for r in results]
             context_parts = []
 
-            for r in results:
-                content_length = self._get_context_length(r['section_type'], movie_id)
+            for s in sections:
+                content_length = self._get_context_length(s.section_type, movie_id)
                 context_parts.append(
-                    f"[{r['movie_title']} - {r['section_type'].replace('_', ' ').title()}]\n"
-                    f"{r['content'][:content_length]}"
+                    f"[{s.movie.title} - {s.get_section_type_display()}]\n"
+                    f"{s.content[:content_length]}"
                 )
 
             context = "\n\n---\n\n".join(context_parts)

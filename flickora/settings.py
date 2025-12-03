@@ -97,12 +97,12 @@ if database_url:
     # To: postgresql://...
     if database_url.startswith("railway"):
         database_url = database_url[7:]  # Remove 'railway' prefix
-        # print(f"DEBUG: Fixed DATABASE_URL = {database_url[:50]}...")
+        print(f"DEBUG: Fixed DATABASE_URL = {database_url[:50]}...")
     
     DATABASES = {
         "default": dj_database_url.parse(
             database_url,
-            conn_max_age=0,  # Changed from 600 to 0 to close connections immediately
+            conn_max_age=600,
             conn_health_checks=True,
         )
     }
