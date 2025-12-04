@@ -1,7 +1,6 @@
 import openai
 from django.conf import settings
 from services.optimized_rag_service import OptimizedRAGService, ConversationMemoryManager
-from pgvector.django import CosineDistance
 import logging
 import re
 import numpy as np
@@ -246,29 +245,38 @@ class GlobalChatService:
         movie_ids = [m.id for m in movies]
         
         if movie_ids:
-            # Wyszukaj w kontekście tych filmów
+            # Use MongoDB for multi-movie search
             from reports.models import MovieSection
-            
+            from services.mongodb_service import get_mongodb_service
+
             query_embedding = self.rag.generate_embedding(query)
-            
-            queryset = MovieSection.objects.filter(
-                embedding__isnull=False,
-                movie_id__in=movie_ids
-            ).annotate(
-                distance=CosineDistance('embedding', query_embedding)
+            mongodb = get_mongodb_service()
+
+            # Search MongoDB across multiple movies
+            mongo_results = mongodb.cosine_similarity_search(
+                query_embedding=query_embedding.tolist(),
+                k=10,
+                movie_id=None,  # Will filter below
+                min_similarity=0.0
             )
-            
-            results = list(queryset.order_by('distance')[:10])
-            
+
+            # Filter to only requested movies
+            mongo_results = [doc for doc in mongo_results if doc['movie_id'] in movie_ids]
+
+            # Convert to MovieSection objects
+            section_ids = [doc['section_id'] for doc in mongo_results]
+            sections = {s.id: s for s in MovieSection.objects.filter(id__in=section_ids)}
+
             return [
                 {
-                    'section': section,
-                    'section_id': section.id,
-                    'similarity': 1.0 - section.distance,
-                    'movie_title': section.movie.title,
-                    'section_type': section.get_section_type_display()
+                    'section': sections[doc['section_id']],
+                    'section_id': doc['section_id'],
+                    'similarity': doc['similarity'],
+                    'movie_title': doc['metadata'].get('movie_title', ''),
+                    'section_type': doc['metadata'].get('section_type_display', '')
                 }
-                for section in results
+                for doc in mongo_results
+                if doc['section_id'] in sections
             ]
         else:
             # Fallback do standardowego wyszukiwania

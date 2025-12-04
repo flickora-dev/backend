@@ -86,13 +86,29 @@ class Command(BaseCommand):
             self.stdout.write(f"Found {incomplete_movies.count()} movies with incomplete reports")
         
         if options['no_embeddings']:
-            queryset = queryset.filter(embedding__isnull=True)
-            self.stdout.write("Filtering sections without embeddings")
-        
+            # Filter sections without embeddings in MongoDB
+            from services.mongodb_service import get_mongodb_service
+            mongodb = get_mongodb_service()
+
+            # Get all section IDs without embeddings
+            all_section_ids = set(queryset.values_list('id', flat=True))
+            sections_with_embeddings_ids = set()
+            for sid in all_section_ids:
+                if mongodb.get_embedding(sid):
+                    sections_with_embeddings_ids.add(sid)
+
+            sections_without_embeddings = all_section_ids - sections_with_embeddings_ids
+            queryset = queryset.filter(id__in=sections_without_embeddings)
+            self.stdout.write("Filtering sections without embeddings (checked MongoDB)")
+
         # Get statistics
         total_sections = queryset.count()
         affected_movies = queryset.values('movie').distinct().count()
-        sections_with_embeddings = queryset.filter(embedding__isnull=False).count()
+
+        # Count sections with embeddings in MongoDB
+        from services.mongodb_service import get_mongodb_service
+        mongodb = get_mongodb_service()
+        sections_with_embeddings = sum(1 for sid in queryset.values_list('id', flat=True) if mongodb.get_embedding(sid))
         
         if total_sections == 0:
             self.stdout.write(self.style.WARNING("No sections match the criteria"))
@@ -140,6 +156,8 @@ class Command(BaseCommand):
         
         # Show remaining stats
         remaining_sections = MovieSection.objects.count()
-        remaining_with_embeddings = MovieSection.objects.filter(embedding__isnull=False).count()
+        from services.mongodb_service import get_mongodb_service
+        mongodb = get_mongodb_service()
+        remaining_with_embeddings = mongodb.get_embeddings_count()
         self.stdout.write(f"\nRemaining sections: {remaining_sections}")
-        self.stdout.write(f"Sections with embeddings: {remaining_with_embeddings}")
+        self.stdout.write(f"Sections with embeddings (MongoDB): {remaining_with_embeddings}")

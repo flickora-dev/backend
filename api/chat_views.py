@@ -19,7 +19,16 @@ def send_chat_message(request):
         message = request.data.get('message')
         movie_id = request.data.get('movie_id')
         conversation_id = request.data.get('conversation_id')
-        
+
+        # Convert movie_id to int if it's a string
+        if movie_id is not None:
+            try:
+                movie_id = int(movie_id)
+                logger.info(f"Chat request - movie_id: {movie_id} (type: {type(movie_id).__name__}), message: '{message[:50]}...'")
+            except (ValueError, TypeError):
+                logger.warning(f"Invalid movie_id: {movie_id}")
+                movie_id = None
+
         if not message:
             return Response(
                 {'error': 'Message is required'},

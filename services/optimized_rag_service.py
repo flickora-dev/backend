@@ -2,8 +2,8 @@ import numpy as np
 from sentence_transformers import SentenceTransformer, CrossEncoder
 from sklearn.feature_extraction.text import TfidfVectorizer
 from django.contrib.postgres.search import SearchVector
-from pgvector.django import CosineDistance
 import logging
+from services.mongodb_service import get_mongodb_service
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +77,8 @@ class OptimizedRAGService:
         self.use_hybrid = False
         # Simple LRU cache for embeddings (last 100 queries)
         self._embedding_cache = {}
+        # MongoDB service for vector operations
+        self.mongodb = get_mongodb_service()
         
     
     def generate_embedding(self, text):
@@ -138,22 +140,28 @@ class OptimizedRAGService:
 
         # Step 1: Retrieve with higher k for re-ranking
         initial_k = k * 2 if use_reranking and self.use_reranking else k
-        
-        queryset = MovieSection.objects.filter(
-            embedding__isnull=False
-        ).annotate(
-            distance=CosineDistance('embedding', query_embedding),
-            similarity=1.0 - CosineDistance('embedding', query_embedding)
+
+        # Use MongoDB for vector search
+        mongo_results = self.mongodb.cosine_similarity_search(
+            query_embedding=query_embedding,
+            k=initial_k,
+            movie_id=movie_id,
+            min_similarity=min_similarity
         )
-        
-        if movie_id:
-            queryset = queryset.filter(movie_id=movie_id)
-        
-        # Step 1: Filter by minimum similarity threshold
-        queryset = queryset.filter(similarity__gte=min_similarity)
-        
-        results = list(queryset.order_by('distance')[:initial_k])
-        
+
+        # Convert MongoDB results to MovieSection objects
+        section_ids = [doc['section_id'] for doc in mongo_results]
+        sections = {s.id: s for s in MovieSection.objects.filter(id__in=section_ids)}
+
+        results = []
+        for doc in mongo_results:
+            section_id = doc['section_id']
+            if section_id in sections:
+                section = sections[section_id]
+                section.distance = doc['distance']
+                section.similarity = doc['similarity']
+                results.append(section)
+
         logger.info(f"Initial retrieval: {len(results)} sections (min_similarity={min_similarity})")
         
         # Step 2: Cross-encoder re-ranking

@@ -1,6 +1,5 @@
 from django.db import models
 from movies.models import Movie
-from pgvector.django import VectorField
 
 class MovieSection(models.Model):
     SECTION_TYPES = [
@@ -13,14 +12,14 @@ class MovieSection(models.Model):
         ('reception', 'Critical Reception & Analysis'),
         ('legacy', 'Cultural Impact & Legacy'),
     ]
-    
+
     movie = models.ForeignKey(Movie, on_delete=models.CASCADE, related_name='sections')
     section_type = models.CharField(max_length=50, choices=SECTION_TYPES)
     content = models.TextField()
     word_count = models.IntegerField(default=0)
     key_topics = models.JSONField(default=list, blank=True)
     generated_at = models.DateTimeField(auto_now_add=True)
-    embedding = VectorField(dimensions=384, null=True, blank=True)
+    # NOTE: Embeddings are now stored in MongoDB Atlas, not PostgreSQL
     
     class Meta:
         unique_together = ['movie', 'section_type']

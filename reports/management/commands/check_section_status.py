@@ -96,19 +96,19 @@ class Command(BaseCommand):
         self.stdout.write(self.style.WARNING(f"  ⚠️  Partial (<8): {partial} movies"))
         self.stdout.write(self.style.ERROR(f"  ✗ Empty (0/8): {empty} movies"))
         
-        # Embedding status
-        total_with_embeddings = MovieSection.objects.filter(
-            embedding__isnull=False
-        ).count()
+        # Embedding status (check MongoDB)
+        from services.mongodb_service import get_mongodb_service
+        mongodb = get_mongodb_service()
+        total_with_embeddings = mongodb.get_embeddings_count()
         embedding_percentage = (total_with_embeddings / total_sections * 100) if total_sections > 0 else 0
-        
-        self.stdout.write(f"\n🔢 EMBEDDING STATUS:")
+
+        self.stdout.write(f"\n[#] EMBEDDING STATUS (MongoDB):")
         self.stdout.write(f"  Sections with embeddings: {total_with_embeddings}/{total_sections} ({embedding_percentage:.0f}%)")
-        
+
         if embedding_percentage < 100:
             missing = total_sections - total_with_embeddings
             self.stdout.write(self.style.WARNING(
-                f"  ⚠️  {missing} sections missing embeddings"
+                f"  [!] {missing} sections missing embeddings"
             ))
             self.stdout.write(f"     Run: python manage.py generate_embeddings")
         

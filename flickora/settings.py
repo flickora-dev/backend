@@ -46,7 +46,6 @@ INSTALLED_APPS = [
     "rest_framework_simplejwt",
     "corsheaders",
     "drf_yasg",  # Swagger/OpenAPI documentation
-    "pgvector",
     "movies",
     "reports",
     "chat",
@@ -136,6 +135,10 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 TMDB_API_KEY = os.getenv("TMDB_API_KEY")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL")
+
+# MongoDB Configuration for Vector Embeddings
+MONGODB_URL = os.getenv("MONGODB_URL")
+MONGODB_DATABASE = os.getenv("MONGODB_DATABASE", "flickora")
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": [

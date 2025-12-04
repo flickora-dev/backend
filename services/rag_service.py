@@ -1,9 +1,9 @@
 from sentence_transformers import SentenceTransformer
 from django.conf import settings
 import logging
-from pgvector.django import CosineDistance
 import threading
 from reports.models import MovieSection
+from services.mongodb_service import get_mongodb_service
 
 logger = logging.getLogger(__name__)
 
@@ -15,6 +15,8 @@ class RAGService:
         # Use shared singleton from OptimizedRAGService to avoid loading model twice
         from services.optimized_rag_service import _ModelSingleton
         self._models = _ModelSingleton()
+        # MongoDB service for vector operations
+        self.mongodb = get_mongodb_service()
 
     def load_model(self):
         """Return pre-loaded model from singleton"""
@@ -62,20 +64,30 @@ class RAGService:
     
     def search_with_priority(self, query, k=5, movie_id=None):
         from reports.models import MovieSection
-        
+
         query_embedding = self.generate_embedding(query)
         query_type = self._classify_query_type(query)
-        
-        queryset = MovieSection.objects.filter(
-            embedding__isnull=False
-        ).annotate(
-            distance=CosineDistance('embedding', query_embedding)
+
+        # Use MongoDB for vector search
+        mongo_results = self.mongodb.cosine_similarity_search(
+            query_embedding=query_embedding.tolist(),
+            k=k*3,
+            movie_id=movie_id,
+            min_similarity=0.0
         )
-        
-        if movie_id:
-            queryset = queryset.filter(movie_id=movie_id)
-        
-        results = list(queryset.order_by('distance')[:k*3])
+
+        # Convert MongoDB results to MovieSection objects with distance
+        section_ids = [doc['section_id'] for doc in mongo_results]
+        sections = {s.id: s for s in MovieSection.objects.filter(id__in=section_ids)}
+
+        results = []
+        for doc in mongo_results:
+            section_id = doc['section_id']
+            if section_id in sections:
+                section = sections[section_id]
+                section.distance = doc['distance']
+                section.similarity = doc['similarity']
+                results.append(section)
         
         section_weights = {
             'plot': {
@@ -162,26 +174,49 @@ class RAGService:
     
     def search_for_recommendations(self, query, k=10, filters=None):
         from reports.models import MovieSection
-        
+        from movies.models import Movie
+
         query_embedding = self.generate_embedding(query)
-        
-        queryset = MovieSection.objects.filter(
-            embedding__isnull=False
-        ).annotate(
-            distance=CosineDistance('embedding', query_embedding)
-        )
-        
-        # Filtruj po gatunkach, latach itp.
+
+        # Get movie_ids if filters are applied
+        movie_ids = None
         if filters:
+            queryset = Movie.objects.all()
             if 'genres' in filters:
-                queryset = queryset.filter(movie__genres__name__in=filters['genres'])
+                queryset = queryset.filter(genres__name__in=filters['genres'])
             if 'year_from' in filters:
-                queryset = queryset.filter(movie__year__gte=filters['year_from'])
+                queryset = queryset.filter(year__gte=filters['year_from'])
             if 'year_to' in filters:
-                queryset = queryset.filter(movie__year__lte=filters['year_to'])
-        
-        # Pobierz więcej wyników niż potrzeba
-        results = list(queryset.order_by('distance')[:k*3])
+                queryset = queryset.filter(year__lte=filters['year_to'])
+            movie_ids = list(queryset.values_list('id', flat=True))
+
+            if not movie_ids:
+                return []
+
+        # Use MongoDB for vector search
+        mongo_results = self.mongodb.cosine_similarity_search(
+            query_embedding=query_embedding.tolist(),
+            k=k*3,
+            movie_id=None,  # Don't filter by single movie
+            min_similarity=0.0
+        )
+
+        # Filter by movie_ids if filters were applied
+        if movie_ids is not None:
+            mongo_results = [doc for doc in mongo_results if doc['movie_id'] in movie_ids]
+
+        # Convert to MovieSection objects
+        section_ids = [doc['section_id'] for doc in mongo_results]
+        sections = {s.id: s for s in MovieSection.objects.filter(id__in=section_ids)}
+
+        results = []
+        for doc in mongo_results:
+            section_id = doc['section_id']
+            if section_id in sections:
+                section = sections[section_id]
+                section.distance = doc['distance']
+                section.similarity = doc['similarity']
+                results.append(section)
         
         # Priorytetyzuj sekcje themes i characters dla rekomendacji
         for section in results:
@@ -224,25 +259,40 @@ class RAGService:
         """
         from reports.models import MovieSection
         from movies.models import Movie
-        
+
         query_embedding = self.generate_embedding(query)
-        
+
         # Znajdź filmy po tytułach
         movies = Movie.objects.filter(title__in=movie_titles)
         movie_ids = [m.id for m in movies]
-        
+
         if not movie_ids:
             # Jeśli nie znaleziono filmów, użyj standardowego wyszukiwania
             return self.search_with_scores(query, k=k, movie_id=None)
-        
-        queryset = MovieSection.objects.filter(
-            embedding__isnull=False,
-            movie_id__in=movie_ids
-        ).annotate(
-            distance=CosineDistance('embedding', query_embedding)
+
+        # Use MongoDB for vector search
+        mongo_results = self.mongodb.cosine_similarity_search(
+            query_embedding=query_embedding.tolist(),
+            k=k*2,
+            movie_id=None,
+            min_similarity=0.0
         )
-        
-        results = list(queryset.order_by('distance')[:k*2])
+
+        # Filter by movie_ids
+        mongo_results = [doc for doc in mongo_results if doc['movie_id'] in movie_ids]
+
+        # Convert to MovieSection objects
+        section_ids = [doc['section_id'] for doc in mongo_results]
+        sections = {s.id: s for s in MovieSection.objects.filter(id__in=section_ids)}
+
+        results = []
+        for doc in mongo_results:
+            section_id = doc['section_id']
+            if section_id in sections:
+                section = sections[section_id]
+                section.distance = doc['distance']
+                section.similarity = doc['similarity']
+                results.append(section)
         
         # Priorytetyzuj sekcje themes, characters, visual_technical
         for section in results:
@@ -271,18 +321,30 @@ class RAGService:
         Wyszukiwanie po gatunkach i tematach
         """
         from reports.models import MovieSection
-        
+
         query_embedding = self.generate_embedding(query)
-        
-        # Priorytetyzuj sekcje themes i legacy
-        queryset = MovieSection.objects.filter(
-            embedding__isnull=False,
-            section_type__in=['themes', 'legacy', 'characters', 'plot_structure']
-        ).annotate(
-            distance=CosineDistance('embedding', query_embedding)
+
+        # Use MongoDB for vector search with section type filter
+        mongo_results = self.mongodb.cosine_similarity_search(
+            query_embedding=query_embedding.tolist(),
+            k=k*2,
+            movie_id=None,
+            section_types=['themes', 'legacy', 'characters', 'plot_structure'],
+            min_similarity=0.0
         )
-        
-        results = list(queryset.order_by('distance')[:k*2])
+
+        # Convert to MovieSection objects
+        section_ids = [doc['section_id'] for doc in mongo_results]
+        sections = {s.id: s for s in MovieSection.objects.filter(id__in=section_ids)}
+
+        results = []
+        for doc in mongo_results:
+            section_id = doc['section_id']
+            if section_id in sections:
+                section = sections[section_id]
+                section.distance = doc['distance']
+                section.similarity = doc['similarity']
+                results.append(section)
         
         # Zapewnij różnorodność filmów
         diverse_results = []

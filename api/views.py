@@ -134,43 +134,62 @@ def generate_section(request):
 @require_http_methods(["POST"])
 def generate_embedding(request):
     try:
+        from services.mongodb_service import get_mongodb_service
+
         data = json.loads(request.body)
         section_id = data.get('section_id')
-        
+
         if not section_id:
             return JsonResponse({'error': 'section_id required'}, status=400)
-        
+
         section = MovieSection.objects.get(id=section_id)
-        
-        if section.embedding is not None and len(section.embedding) > 0:
+
+        # Check if embedding already exists in MongoDB
+        mongodb = get_mongodb_service()
+        existing = mongodb.get_embedding(section_id)
+        if existing:
             return JsonResponse({'error': 'Embedding already exists'}, status=400)
-        
+
         rag = RAGService()
-        
+
         try:
             logger.info(f"Generating embedding for section {section_id}")
             embedding = rag.generate_embedding(section.content)
-            
-            section.embedding = embedding
-            section.save(update_fields=['embedding'])
-            
-            logger.info(f"Successfully generated embedding for section {section_id}")
-            
+
+            # Store embedding in MongoDB
+            success = mongodb.store_embedding(
+                section_id=section.id,
+                movie_id=section.movie_id,
+                section_type=section.section_type,
+                embedding=embedding.tolist(),
+                metadata={
+                    'movie_title': section.movie.title,
+                    'section_type_display': section.get_section_type_display(),
+                    'word_count': section.word_count,
+                    'content_preview': section.content[:200]
+                }
+            )
+
+            if not success:
+                raise Exception("Failed to store embedding in MongoDB")
+
+            logger.info(f"Successfully generated and stored embedding for section {section_id}")
+
             return JsonResponse({
                 'success': True,
                 'section_id': section.id,
                 'embedding_dimensions': len(embedding) if embedding is not None else 0
             })
-            
+
         except Exception as e:
             logger.error(f"Error generating embedding for section {section_id}: {e}")
             import traceback
             logger.error(f"Traceback: {traceback.format_exc()}")
-            
+
             return JsonResponse({
                 'error': f'Embedding generation failed: {str(e)}'
             }, status=500)
-        
+
     except MovieSection.DoesNotExist:
         return JsonResponse({'error': 'Section not found'}, status=404)
     except Exception as e:
@@ -183,20 +202,27 @@ def generate_embedding(request):
 @require_http_methods(["GET"])
 def movie_status(request, movie_id):
     try:
+        from services.mongodb_service import get_mongodb_service
+
         movie = Movie.objects.get(id=movie_id)
         sections = MovieSection.objects.filter(movie=movie)
-        
+        mongodb = get_mongodb_service()
+
         section_status = {}
         for section in sections:
+            # Check if embedding exists in MongoDB
+            mongo_doc = mongodb.get_embedding(section.id)
+            has_embedding = mongo_doc is not None
+
             section_status[section.section_type] = {
                 'exists': True,
                 'word_count': section.word_count,
-                'has_embedding': section.embedding is not None and len(section.embedding) > 0
+                'has_embedding': has_embedding
             }
-        
+
         all_types = ['production', 'plot_structure', 'cast_crew', 'characters',
                      'visual_technical', 'themes', 'reception', 'legacy']
-        
+
         for section_type in all_types:
             if section_type not in section_status:
                 section_status[section_type] = {
@@ -204,7 +230,7 @@ def movie_status(request, movie_id):
                     'word_count': 0,
                     'has_embedding': False
                 }
-        
+
         return JsonResponse({
             'movie_id': movie.id,
             'title': movie.title,
@@ -212,35 +238,36 @@ def movie_status(request, movie_id):
             'total_sections': sections.count(),
             'complete': sections.count() == 8
         })
-        
+
     except Movie.DoesNotExist:
         return JsonResponse({'error': 'Movie not found'}, status=404)
 
 
 @require_http_methods(["GET"])
 def movies_without_reports(request):
+    from services.mongodb_service import get_mongodb_service
+
     limit = int(request.GET.get('limit', 10))
-    
+    mongodb = get_mongodb_service()
+
     movies = Movie.objects.annotate(
-        section_count=models.Count('sections'),
-        sections_with_embeddings=models.Count(
-            'sections',
-            filter=models.Q(sections__embedding__isnull=False)
-        )
+        section_count=models.Count('sections')
     ).filter(
-        models.Q(section_count__lt=8) |
-        models.Q(section_count__gt=models.F('sections_with_embeddings'))
+        section_count__lt=8
     ).order_by('id')[:limit]
-    
+
     result = []
     for movie in movies:
+        # Count embeddings in MongoDB
+        embeddings_count = mongodb.get_embeddings_count(movie_id=movie.id)
+
         result.append({
             'id': movie.id,
             'title': movie.title,
             'year': movie.year,
             'tmdb_id': movie.tmdb_id,
             'sections_count': movie.section_count,
-            'embeddings_count': movie.sections_with_embeddings
+            'embeddings_count': embeddings_count
         })
     
     return JsonResponse({
@@ -252,18 +279,25 @@ def movies_without_reports(request):
 @require_http_methods(["GET"])
 def get_movie_sections(request, movie_id):
     try:
+        from services.mongodb_service import get_mongodb_service
+
         movie = Movie.objects.get(id=movie_id)
         sections = MovieSection.objects.filter(movie=movie)
-        
+        mongodb = get_mongodb_service()
+
         result = {}
         for section in sections:
+            # Check MongoDB for embedding
+            mongo_doc = mongodb.get_embedding(section.id)
+            has_embedding = mongo_doc is not None
+
             result[section.section_type] = {
                 'id': section.id,
                 'section_type': section.section_type,
                 'word_count': section.word_count,
-                'has_embedding': section.embedding is not None and len(section.embedding) > 0
+                'has_embedding': has_embedding
             }
-        
+
         return JsonResponse({
             'movie_id': movie.id,
             'movie_title': movie.title,

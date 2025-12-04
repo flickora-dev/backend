@@ -61,10 +61,6 @@ class MovieAdmin(admin.ModelAdmin):
         queryset = super().get_queryset(request)
         queryset = queryset.prefetch_related('genres').annotate(
             total_sections=Count('sections'),
-            sections_with_embeddings=Count(
-                'sections',
-                filter=Q(sections__embedding__isnull=False)
-            ),
             total_views=Count('views')
         )
         return queryset
@@ -112,9 +108,15 @@ class MovieAdmin(admin.ModelAdmin):
     section_status.admin_order_field = 'total_sections'
     
     def embedding_status(self, obj):
+        from services.mongodb_service import get_mongodb_service
+
         total = obj.total_sections if hasattr(obj, 'total_sections') else obj.sections.count()
-        with_emb = obj.sections_with_embeddings if hasattr(obj, 'sections_with_embeddings') else obj.sections.filter(embedding__isnull=False).count()
-        
+
+        # Count embeddings in MongoDB
+        mongodb = get_mongodb_service()
+        section_ids = list(obj.sections.values_list('id', flat=True))
+        with_emb = sum(1 for sid in section_ids if mongodb.get_embedding(sid))
+
         if total == 0:
             return format_html('<span style="color: gray;">-</span>')
         elif with_emb == total:
@@ -123,7 +125,7 @@ class MovieAdmin(admin.ModelAdmin):
             return format_html('<span style="color: orange;">⚠️ {}/{}</span>', with_emb, total)
         else:
             return format_html('<span style="color: red;">❌ 0/{}</span>', total)
-    
+
     embedding_status.short_description = 'Embeddings'
     
     def view_stats(self, obj):
@@ -149,22 +151,25 @@ class MovieAdmin(admin.ModelAdmin):
     view_stats.short_description = 'Recent Views'
     
     def report_details(self, obj):
+        from services.mongodb_service import get_mongodb_service
+
         sections = obj.sections.all()
-        
+
         if not sections:
             return format_html('<p style="color: gray;">No reports generated</p>')
-        
+
+        mongodb = get_mongodb_service()
         html = '<table style="width: 100%; border-collapse: collapse;">'
         html += '<tr style="background: #f0f0f0;"><th>Section Type</th><th>Words</th><th>Embedding</th></tr>'
-        
+
         for section in sections:
-            has_emb = section.embedding is not None and len(section.embedding) > 0
+            has_emb = mongodb.get_embedding(section.id) is not None
             emb_status = '✅' if has_emb else '❌'
             html += f'<tr><td>{section.get_section_type_display()}</td><td>{section.word_count}</td><td>{emb_status}</td></tr>'
-        
+
         html += '</table>'
         return format_html(html)
-    
+
     report_details.short_description = 'Report Details'
     
     @admin.action(description='🔄 Generate reports for selected movies')
@@ -211,18 +216,32 @@ class MovieAdmin(admin.ModelAdmin):
     @admin.action(description='🔧 Regenerate embeddings for selected movies')
     def regenerate_embeddings_action(self, request, queryset):
         from services.rag_service import RAGService
-        
+        from services.mongodb_service import get_mongodb_service
+
         rag = RAGService()
+        mongodb = get_mongodb_service()
         total_processed = 0
-        
+
         for movie in queryset:
             sections = movie.sections.all()
-            
+
             for section in sections:
                 try:
                     embedding = rag.generate_embedding(section.content)
-                    section.embedding = embedding
-                    section.save(update_fields=['embedding'])
+
+                    # Store in MongoDB
+                    mongodb.store_embedding(
+                        section_id=section.id,
+                        movie_id=section.movie_id,
+                        section_type=section.section_type,
+                        embedding=embedding.tolist(),
+                        metadata={
+                            'movie_title': section.movie.title,
+                            'section_type_display': section.get_section_type_display(),
+                            'word_count': section.word_count,
+                            'content_preview': section.content[:200]
+                        }
+                    )
                     total_processed += 1
                 except Exception as e:
                     self.message_user(
@@ -230,27 +249,28 @@ class MovieAdmin(admin.ModelAdmin):
                         f'Error generating embedding for {movie.title} - {section.section_type}: {str(e)}',
                         level=messages.ERROR
                     )
-        
+
         self.message_user(
             request,
-            f'Generated {total_processed} embeddings for {queryset.count()} movie(s)',
+            f'Generated {total_processed} embeddings in MongoDB for {queryset.count()} movie(s)',
             level=messages.SUCCESS
         )
     
     @admin.action(description='❌ Delete embeddings (keep reports)')
     def delete_embeddings_action(self, request, queryset):
+        from services.mongodb_service import get_mongodb_service
+
+        mongodb = get_mongodb_service()
         total_deleted = 0
-        
+
         for movie in queryset:
             sections = movie.sections.all()
             for section in sections:
-                if section.embedding is not None and len(section.embedding) > 0:
-                    section.embedding = None
-                    section.save(update_fields=['embedding'])
+                if mongodb.delete_embedding(section.id):
                     total_deleted += 1
-        
+
         self.message_user(
             request,
-            f'Deleted {total_deleted} embeddings from {queryset.count()} movie(s)',
+            f'Deleted {total_deleted} embeddings from MongoDB for {queryset.count()} movie(s)',
             level=messages.WARNING
         )
