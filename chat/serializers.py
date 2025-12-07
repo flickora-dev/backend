@@ -14,14 +14,26 @@ class ChatMessageSerializer(serializers.ModelSerializer):
 class ChatConversationSerializer(serializers.ModelSerializer):
     messages = ChatMessageSerializer(many=True, read_only=True)
     movie_title = serializers.CharField(source='movie.title', read_only=True, allow_null=True)
-    
+    movie_poster = serializers.SerializerMethodField()
+    unread_count = serializers.SerializerMethodField()
+
     class Meta:
         model = ChatConversation
         fields = [
-            'id', 'conversation_type', 'movie', 'movie_title',
-            'created_at', 'updated_at', 'messages'
+            'id', 'conversation_type', 'movie', 'movie_title', 'movie_poster',
+            'created_at', 'updated_at', 'messages', 'unread_count'
         ]
         read_only_fields = ['created_at', 'updated_at']
+
+    def get_movie_poster(self, obj):
+        """Get movie poster URL"""
+        if obj.conversation_type == 'movie' and obj.movie:
+            return obj.movie.poster_url
+        return None
+
+    def get_unread_count(self, obj):
+        """Count unread assistant messages"""
+        return obj.messages.filter(role='assistant', read=False).count()
 
 
 class ChatRequestSerializer(serializers.Serializer):

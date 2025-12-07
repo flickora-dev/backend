@@ -16,22 +16,25 @@ router = DefaultRouter()
 router.register(r'genres', GenreViewSet, basename = 'genre')
 router.register(r'movies', MovieViewSet, basename = 'movie')
 router.register(r'sections', MovieSectionViewSet, basename = 'section')
+router.register(r'chat', ChatViewSet, basename='chat')
 
 
 urlpatterns = [
     path('', include(router.urls)),
-    
+
     path("health/", views.health),
 
-    
+
     path('auth/register/', register, name='api_register'),
     path('auth/login/', login, name='api_login'),
     path('auth/logout/', logout, name='api_logout'),
     path('auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('auth/profile/', user_profile, name='user_profile'),
     path('auth/profile/update/', update_profile, name='update_profile'),
-    
+
     path('chat/send/', chat_views.send_chat_message, name='chat_send'),
+    path('chat/conversations/', ChatViewSet.as_view({'get': 'conversations'}), name='chat_conversations'),
+    path('chat/<int:pk>/conversation_detail/', ChatViewSet.as_view({'get': 'conversation_detail'}), name='chat_conversation_detail'),
     
     path('import-movie/', legacy_views.import_movie, name='api_import_movie'),
     path('generate-section/', legacy_views.generate_section, name='api_generate_section'),

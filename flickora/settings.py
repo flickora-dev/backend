@@ -136,6 +136,10 @@ TMDB_API_KEY = os.getenv("TMDB_API_KEY")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 N8N_WEBHOOK_URL = os.getenv("N8N_WEBHOOK_URL")
 
+# Ollama Configuration
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "mistral")
+
 # MongoDB Configuration for Vector Embeddings
 MONGODB_URL = os.getenv("MONGODB_URL")
 MONGODB_DATABASE = os.getenv("MONGODB_DATABASE", "flickora")

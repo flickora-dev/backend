@@ -1,21 +1,19 @@
-import openai
+import requests
 from django.conf import settings
 from services.optimized_rag_service import OptimizedRAGService, ConversationMemoryManager
 import logging
 import re
 import numpy as np
+import json
 
 logger = logging.getLogger(__name__)
 
 
 class GlobalChatService:
     def __init__(self):
-        self.client = openai.OpenAI(
-            base_url="https://openrouter.ai/api/v1",
-            api_key=settings.OPENROUTER_API_KEY
-        )
-
-        self.model = "meta-llama/llama-3.3-70b-instruct:free"
+        # Use Ollama directly via HTTP API
+        self.ollama_url = settings.OLLAMA_BASE_URL.replace('/v1', '') if settings.OLLAMA_BASE_URL else 'http://127.0.0.1:11434'
+        self.model = settings.OLLAMA_MODEL or 'mistral'
 
         # Use optimized RAG service
         self.rag = OptimizedRAGService()
@@ -116,25 +114,34 @@ class GlobalChatService:
             # Step 6: Tuned model parameters
             try:
                 llm_start = time.time()
-                response = self.client.chat.completions.create(
-                    model=self.model,
-                    messages=messages,
-                    max_tokens=300,
-                    temperature=0.6,  # Lower for more factual
-                    top_p=0.9,
-                    presence_penalty=0.3,  # Avoid repetition
-                    frequency_penalty=0.3
+
+                # Call Ollama API directly
+                response = requests.post(
+                    f"{self.ollama_url}/api/chat",
+                    json={
+                        "model": self.model,
+                        "messages": messages,
+                        "stream": False,
+                        "options": {
+                            "temperature": 0.6,
+                            "top_p": 0.9,
+                            "num_predict": 300
+                        }
+                    }
                 )
+                response.raise_for_status()
+                result = response.json()
+
                 llm_time = time.time() - llm_start
                 logger.info(f"LLM API call took: {llm_time:.2f}s")
 
-                if not response or not response.choices:
+                if not result or 'message' not in result:
                     raise ValueError("Empty response")
 
-                answer = response.choices[0].message.content.strip()
+                answer = result['message']['content'].strip()
 
             except Exception as api_error:
-                logger.error(f"OpenRouter API error: {api_error}")
+                logger.error(f"Ollama API error: {api_error}")
                 answer = self._generate_fallback_response(query_type, results[:3])
             
             # Limit response length
@@ -638,29 +645,38 @@ Please provide a concise answer (max 200 words) that:
             full_response = ""
 
             try:
-                stream = self.client.chat.completions.create(
-                    model=self.model,
-                    messages=messages,
-                    max_tokens=300,
-                    temperature=0.6,
-                    top_p=0.9,
-                    presence_penalty=0.3,
-                    frequency_penalty=0.3,
-                    stream=True  # Enable streaming
+                # Call Ollama streaming API
+                stream_response = requests.post(
+                    f"{self.ollama_url}/api/chat",
+                    json={
+                        "model": self.model,
+                        "messages": messages,
+                        "stream": True,
+                        "options": {
+                            "temperature": 0.6,
+                            "top_p": 0.9,
+                            "num_predict": 300
+                        }
+                    },
+                    stream=True
                 )
+                stream_response.raise_for_status()
 
-                for chunk in stream:
-                    if chunk.choices and chunk.choices[0].delta.content:
-                        content = chunk.choices[0].delta.content
-                        full_response += content
-                        # Send each chunk to client
-                        yield f"data: {json.dumps({'type': 'content', 'content': content})}\n\n"
+                for line in stream_response.iter_lines():
+                    if line:
+                        chunk = json.loads(line)
+                        if not chunk.get('done', False):
+                            content = chunk.get('message', {}).get('content', '')
+                            if content:
+                                full_response += content
+                                # Send each chunk to client
+                                yield f"data: {json.dumps({'type': 'content', 'content': content})}\n\n"
 
                 llm_time = time.time() - llm_start
                 logger.info(f"LLM streaming took: {llm_time:.2f}s")
 
             except Exception as api_error:
-                logger.error(f"OpenRouter API error: {api_error}")
+                logger.error(f"Ollama API error: {api_error}")
                 fallback = self._generate_fallback_response(query_type, results[:3])
                 yield f"data: {json.dumps({'type': 'content', 'content': fallback})}\n\n"
                 full_response = fallback

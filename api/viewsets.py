@@ -221,14 +221,32 @@ class ChatViewSet(viewsets.ViewSet):
     
     @action(detail=True, methods=['get'])
     def conversation_detail(self, request, pk=None):
-        """Get conversation with all messages"""
+        """Get conversation with all messages and mark as read"""
         try:
             conversation = ChatConversation.objects.get(id=pk)
+
+            # Mark all assistant messages as read
+            conversation.messages.filter(role='assistant', read=False).update(read=True)
+
         except ChatConversation.DoesNotExist:
             return Response(
                 {'error': 'Conversation not found'},
                 status=status.HTTP_404_NOT_FOUND
             )
-        
+
         serializer = ChatConversationSerializer(conversation)
         return Response(serializer.data)
+
+    @action(detail=True, methods=['delete'])
+    def delete_conversation(self, request, pk=None):
+        """Delete a conversation"""
+        try:
+            conversation = ChatConversation.objects.get(id=pk)
+            conversation.delete()
+            return Response({'message': 'Conversation deleted successfully'},
+                           status=status.HTTP_204_NO_CONTENT)
+        except ChatConversation.DoesNotExist:
+            return Response(
+                {'error': 'Conversation not found'},
+                status=status.HTTP_404_NOT_FOUND
+            )

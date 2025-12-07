@@ -61,11 +61,12 @@ def send_chat_message(request):
         chat_service = ChatService()
         result = chat_service.chat(message, movie_id)
         
-        # Save assistant message
+        # Save assistant message and mark as read (since user is actively chatting)
         ChatMessage.objects.create(
             conversation=conversation,
             role='assistant',
             content=result['message'],
+            read=True,  # Mark as read since user is actively in this conversation
             context_sections=[
                 {
                     'section_id': source['section'].id,

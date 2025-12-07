@@ -35,7 +35,7 @@ class ChatMessage(models.Model):
         ('user', 'User'),
         ('assistant', 'Assistant'),
     ]
-    
+
     conversation = models.ForeignKey(
         ChatConversation,
         on_delete=models.CASCADE,
@@ -45,9 +45,10 @@ class ChatMessage(models.Model):
     content = models.TextField()
     context_sections = models.JSONField(default=list, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
-    
+    read = models.BooleanField(default=False)  # Track if message has been read
+
     class Meta:
         ordering = ['created_at']
-        
+
     def __str__(self):
         return f"{self.role}: {self.content[:50]}..."
