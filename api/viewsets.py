@@ -5,10 +5,10 @@ from rest_framework.permissions import IsAuthenticated, AllowAny
 from django.db.models import Q, Count
 from django_filters.rest_framework import DjangoFilterBackend
 
-from movies.models import Movie, Genre, MovieView
+from movies.models import Movie, Genre, MovieView, MovieFavorite
 from movies.serializers import (
     MovieListSerializer, MovieDetailSerializer,
-    GenreSerializer, MovieViewSerializer
+    GenreSerializer, MovieViewSerializer, MovieFavoriteSerializer
 )
 from reports.models import MovieSection
 from reports.serializers import MovieSectionSerializer, MovieSectionListSerializer
@@ -116,8 +116,56 @@ class MovieViewSet(viewsets.ReadOnlyModelViewSet):
         views = MovieView.objects.filter(
             user=request.user
         ).select_related('movie').order_by('-viewed_at')[:10]
-        
+
         movies = [view.movie for view in views]
+        serializer = self.get_serializer(movies, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
+    def favorite(self, request, pk=None):
+        """Add movie to favorites"""
+        movie = self.get_object()
+        favorite, created = MovieFavorite.objects.get_or_create(
+            user=request.user,
+            movie=movie
+        )
+        serializer = MovieFavoriteSerializer(favorite)
+        return Response(
+            serializer.data,
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK
+        )
+
+    @action(detail=True, methods=['delete'], permission_classes=[IsAuthenticated])
+    def unfavorite(self, request, pk=None):
+        """Remove movie from favorites"""
+        movie = self.get_object()
+        deleted_count, _ = MovieFavorite.objects.filter(
+            user=request.user,
+            movie=movie
+        ).delete()
+
+        if deleted_count > 0:
+            return Response({'success': True}, status=status.HTTP_204_NO_CONTENT)
+        return Response({'error': 'Movie not in favorites'}, status=status.HTTP_404_NOT_FOUND)
+
+    @action(detail=True, methods=['get'], permission_classes=[IsAuthenticated])
+    def is_favorited(self, request, pk=None):
+        """Check if movie is in user's favorites"""
+        movie = self.get_object()
+        is_favorited = MovieFavorite.objects.filter(
+            user=request.user,
+            movie=movie
+        ).exists()
+        return Response({'is_favorited': is_favorited})
+
+    @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
+    def favorites(self, request):
+        """Get all favorite movies for current user"""
+        favorites = MovieFavorite.objects.filter(
+            user=request.user
+        ).select_related('movie').prefetch_related('movie__genres').order_by('-created_at')
+
+        movies = [fav.movie for fav in favorites]
         serializer = self.get_serializer(movies, many=True)
         return Response(serializer.data)
 

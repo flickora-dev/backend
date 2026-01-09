@@ -2,7 +2,7 @@ from rest_framework import serializers
 from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError as DjangoValidationError
-from .models import Movie, Genre, MovieView
+from .models import Movie, Genre, MovieView, MovieFavorite
 
 class GenreSerializer(serializers.ModelSerializer):
     class Meta:
@@ -42,11 +42,20 @@ class MovieDetailSerializer(serializers.ModelSerializer):
     
 class MovieViewSerializer(serializers.ModelSerializer):
     Movie = MovieListSerializer(read_only=True)
-    
+
     class Meta:
         model = MovieView
         fields = ['id', 'movie', 'viewed_at']
         read_only_fields = ['viewed_at']
+
+
+class MovieFavoriteSerializer(serializers.ModelSerializer):
+    movie = MovieListSerializer(read_only=True)
+
+    class Meta:
+        model = MovieFavorite
+        fields = ['id', 'movie', 'created_at']
+        read_only_fields = ['created_at']
         
 
 class UserSerializer(serializers.ModelSerializer):

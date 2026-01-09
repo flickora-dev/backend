@@ -4,7 +4,7 @@ from django.utils.html import format_html
 from django.shortcuts import redirect
 from django.urls import path
 from django.contrib import messages
-from .models import Movie, Genre, MovieView
+from .models import Movie, Genre, MovieView, MovieFavorite
 
 
 @admin.register(Genre)
@@ -30,6 +30,15 @@ class MovieViewAdmin(admin.ModelAdmin):
     search_fields = ['user__username', 'movie__title']
     readonly_fields = ['viewed_at']
     ordering = ['-viewed_at']
+
+
+@admin.register(MovieFavorite)
+class MovieFavoriteAdmin(admin.ModelAdmin):
+    list_display = ['id', 'user', 'movie', 'created_at']
+    list_filter = ['created_at', 'user']
+    search_fields = ['user__username', 'movie__title']
+    readonly_fields = ['created_at']
+    ordering = ['-created_at']
 
 
 @admin.register(Movie)
