@@ -2,6 +2,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework import status
+from django.utils import timezone
 from chat.models import ChatConversation, ChatMessage
 from services.chat_service import ChatService
 import logging
@@ -78,6 +79,10 @@ def send_chat_message(request):
             ]
         )
         
+        # Update conversation timestamp
+        conversation.updated_at = timezone.now()
+        conversation.save(update_fields=['updated_at'])
+
         # Prepare response
         response_data = {
             'message': result['message'],
@@ -92,7 +97,7 @@ def send_chat_message(request):
                 for source in result['sources']
             ]
         }
-        
+
         return Response(response_data)
         
     except Exception as e:

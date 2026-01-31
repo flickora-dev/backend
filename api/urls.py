@@ -2,7 +2,7 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from rest_framework_simplejwt.views import TokenRefreshView
 from .viewsets import (GenreViewSet, MovieViewSet, MovieSectionViewSet, ChatViewSet)
-from .auth_views import (register, login, logout, update_profile, user_profile)
+from .auth_views import (register, login, logout, update_profile, user_profile, delete_account)
 from . import views as legacy_views
 from . import chat_views
 # api/urls.py
@@ -31,6 +31,7 @@ urlpatterns = [
     path('auth/token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
     path('auth/profile/', user_profile, name='user_profile'),
     path('auth/profile/update/', update_profile, name='update_profile'),
+    path('auth/account/delete/', delete_account, name='delete_account'),
 
     path('chat/send/', chat_views.send_chat_message, name='chat_send'),
     path('chat/conversations/', ChatViewSet.as_view({'get': 'conversations'}), name='chat_conversations'),

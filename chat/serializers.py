@@ -11,8 +11,16 @@ class ChatMessageSerializer(serializers.ModelSerializer):
         read_only_fields = ['created_at']
 
 
+class MovieMinimalSerializer(serializers.Serializer):
+    """Minimal movie serializer for chat conversations"""
+    id = serializers.IntegerField()
+    title = serializers.CharField()
+    poster_url = serializers.CharField(allow_null=True)
+
+
 class ChatConversationSerializer(serializers.ModelSerializer):
     messages = ChatMessageSerializer(many=True, read_only=True)
+    movie = MovieMinimalSerializer(read_only=True, allow_null=True)
     movie_title = serializers.CharField(source='movie.title', read_only=True, allow_null=True)
     movie_poster = serializers.SerializerMethodField()
     unread_count = serializers.SerializerMethodField()

@@ -6,6 +6,7 @@ from django.db.models import Q, Count
 from django_filters.rest_framework import DjangoFilterBackend
 
 from movies.models import Movie, Genre, MovieView, MovieFavorite
+from .filters import MovieFilter
 from movies.serializers import (
     MovieListSerializer, MovieDetailSerializer,
     GenreSerializer, MovieViewSerializer, MovieFavoriteSerializer
@@ -28,6 +29,7 @@ class GenreViewSet(viewsets.ReadOnlyModelViewSet):
     ).filter(movie_count__gt=0).order_by('name')
     serializer_class = GenreSerializer
     permission_classes = [AllowAny]
+    pagination_class = None
 
 
 class MovieViewSet(viewsets.ReadOnlyModelViewSet):
@@ -35,10 +37,11 @@ class MovieViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Movie.objects.prefetch_related('genres', 'sections')
     permission_classes = [AllowAny]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
-    filterset_fields = ['year', 'genres__tmdb_id']
+    filterset_class = MovieFilter
     search_fields = ['title', 'director']
     ordering_fields = ['year', 'title', 'imdb_rating', 'created_at']
     ordering = ['-year', 'title']
+    # Uses default pagination (20 per page) - filtering happens BEFORE pagination
     
     def get_serializer_class(self):
         if self.action == 'retrieve':

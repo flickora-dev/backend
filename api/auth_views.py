@@ -105,9 +105,26 @@ def user_profile(request):
 def update_profile(request):
     """Update current user profile"""
     serializer = UserSerializer(request.user, data=request.data, partial=True)
-    
+
     if serializer.is_valid():
         serializer.save()
         return Response(serializer.data)
-    
+
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+@api_view(['DELETE'])
+@permission_classes([IsAuthenticated])
+def delete_account(request):
+    """Delete current user account"""
+    user = request.user
+
+    # Log the deletion
+    logger.info(f"User {user.username} is deleting their account")
+
+    # Delete the user (this will cascade delete related data)
+    user.delete()
+
+    return Response({
+        'message': 'Account deleted successfully'
+    }, status=status.HTTP_200_OK)

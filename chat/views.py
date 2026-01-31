@@ -1,5 +1,6 @@
 from django.http import JsonResponse, StreamingHttpResponse
 from django.views.decorators.http import require_POST
+from django.utils import timezone
 import json
 from .models import ChatConversation, ChatMessage
 from services.chat_service import ChatService
@@ -42,32 +43,37 @@ def chat_message(request):
             role='user',
             content=message
         )
-        
+
+        # Użyj movie_id z requestu lub z istniejącej konwersacji
+        effective_movie_id = movie_id or (conversation.movie_id if conversation.conversation_type == 'movie' else None)
+
         # Pobierz odpowiedź AI
         chat_service = ChatService()
-        if movie_id:
-            result = chat_service.chat(message, movie_id)
+        if effective_movie_id:
+            result = chat_service.chat(message, effective_movie_id)
         else:
             result = chat_service.global_chat.chat(message, conversation_id=conversation.id)
-        
+
         # WAŻNE: Oznacz że system prompt został wysłany
         if result.get('is_first_message', False):
             conversation.system_prompt_sent = True
-        
+
         # Zaktualizuj referenced_movies
         if 'referenced_movies' in result and result['referenced_movies']:
             current_movies = conversation.referenced_movies or []
             new_movies = result['referenced_movies']
             conversation.referenced_movies = (current_movies + new_movies)[-10:]
-        
-        conversation.save()
-        
+
         # Zapisz odpowiedź asystenta
         ChatMessage.objects.create(
             conversation=conversation,
             role='assistant',
             content=result['message']
         )
+
+        # Zawsze zapisz konwersację na końcu żeby updated_at się zaktualizował
+        conversation.updated_at = timezone.now()
+        conversation.save(update_fields=['updated_at', 'system_prompt_sent', 'referenced_movies'])
         
         # Przygotuj odpowiedź
         serialized_sources = [
@@ -188,7 +194,10 @@ def chat_message_stream(request):
                         new_movies = metadata['referenced_movies']
                         conversation.referenced_movies = (current_movies + new_movies)[-10:]
 
-                    conversation.save()
+                # Zawsze zapisz konwersację żeby updated_at się zaktualizował
+                from django.utils import timezone
+                conversation.updated_at = timezone.now()
+                conversation.save(update_fields=['updated_at', 'system_prompt_sent', 'referenced_movies'])
 
                 # Send final metadata event with conversation_id
                 final_event = {

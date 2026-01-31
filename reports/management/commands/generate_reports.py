@@ -3,6 +3,7 @@ from movies.models import Movie
 from reports.models import MovieSection
 from services.openrouter_service import OpenRouterService
 from services.rag_service import RAGService
+from services.mongodb_service import MongoDBVectorService
 import time
 
 class Command(BaseCommand):
@@ -17,6 +18,7 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         openrouter = OpenRouterService()
         rag = RAGService()
+        mongodb = MongoDBVectorService()
         
         if options['movie_id']:
             movies = Movie.objects.filter(id=options['movie_id'])
@@ -62,23 +64,38 @@ class Command(BaseCommand):
                     self.stdout.write(f"  - Generating {section_type}...")
                     
                     content = openrouter.generate_movie_section(movie_data, section_type)
-                    
+
                     if content:
-                        embedding = None
-                        
-                        if not options['skip_embeddings']:
-                            self.stdout.write(f"    - Generating embedding...")
-                            embedding = rag.generate_embedding(content)
-                        
-                        MovieSection.objects.create(
+                        # Create section first
+                        section = MovieSection.objects.create(
                             movie=movie,
                             section_type=section_type,
-                            content=content,
-                            embedding=embedding
+                            content=content
                         )
-                        
+
+                        # Generate and store embedding in MongoDB
+                        embedding_stored = False
+                        if not options['skip_embeddings']:
+                            self.stdout.write(f"    - Generating embedding...")
+                            try:
+                                embedding = rag.generate_embedding(content)
+                                if embedding is not None:
+                                    success = mongodb.store_embedding(
+                                        section_id=section.id,
+                                        movie_id=movie.id,
+                                        section_type=section_type,
+                                        embedding=embedding.tolist(),
+                                        metadata={
+                                            'word_count': section.word_count,
+                                            'movie_title': movie.title
+                                        }
+                                    )
+                                    embedding_stored = success
+                            except Exception as e:
+                                self.stdout.write(self.style.WARNING(f"    ! Embedding generation failed: {e}"))
+
                         total_generated += 1
-                        emb_status = 'yes' if embedding is not None else 'no'
+                        emb_status = 'yes' if embedding_stored else 'no'
                         self.stdout.write(self.style.SUCCESS(
                             f"    ✓ Generated ({len(content.split())} words, embedding: {emb_status})"
                         ))

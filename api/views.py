@@ -108,8 +108,7 @@ def generate_section(request):
         section = MovieSection.objects.create(
             movie=movie,
             section_type=section_type,
-            content=content,
-            embedding=None 
+            content=content
         )
         
         return JsonResponse({
