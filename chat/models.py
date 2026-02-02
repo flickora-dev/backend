@@ -1,4 +1,5 @@
 from django.db import models
+from django.conf import settings
 from movies.models import Movie
 
 
@@ -7,7 +8,14 @@ class ChatConversation(models.Model):
         ('global', 'Global Chat'),
         ('movie', 'Movie-Specific Chat'),
     ]
-    
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='chat_conversations',
+        null=True,  # Allow null for migration, will require auth later
+        blank=True
+    )
     conversation_type = models.CharField(max_length=20, choices=CONVERSATION_TYPES)
     movie = models.ForeignKey(
         Movie,

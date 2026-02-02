@@ -188,8 +188,8 @@ class MovieSectionViewSet(viewsets.ReadOnlyModelViewSet):
 
 class ChatViewSet(viewsets.ViewSet):
     """API endpoint for chat functionality"""
-    permission_classes = [AllowAny]
-    
+    permission_classes = [IsAuthenticated]
+
     @action(detail=False, methods=['post'])
     def send_message(self, request):
         serializer = ChatRequestSerializer(data=request.data)
@@ -198,14 +198,18 @@ class ChatViewSet(viewsets.ViewSet):
                 serializer.errors,
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
+
         message = serializer.validated_data['message']
         movie_id = serializer.validated_data.get('movie_id')
         conversation_id = serializer.validated_data.get('conversation_id')
-        
+
         if conversation_id:
             try:
-                conversation = ChatConversation.objects.get(id=conversation_id)
+                # Only allow access to own conversations
+                conversation = ChatConversation.objects.get(
+                    id=conversation_id,
+                    user=request.user
+                )
             except ChatConversation.DoesNotExist:
                 return Response(
                     {'error': 'Conversation not found'},
@@ -214,6 +218,7 @@ class ChatViewSet(viewsets.ViewSet):
         else:
             conversation_type = 'movie' if movie_id else 'general'
             conversation = ChatConversation.objects.create(
+                user=request.user,
                 conversation_type=conversation_type,
                 movie_id=movie_id if movie_id else None
             )
@@ -265,16 +270,21 @@ class ChatViewSet(viewsets.ViewSet):
     
     @action(detail=False, methods=['get'])
     def conversations(self, request):
-        """Get user's chat conversations"""
-        conversations = ChatConversation.objects.all().order_by('-updated_at')[:20]
+        """Get user's chat conversations - only returns conversations owned by the user"""
+        conversations = ChatConversation.objects.filter(
+            user=request.user
+        ).order_by('-updated_at')[:20]
         serializer = ChatConversationSerializer(conversations, many=True)
         return Response(serializer.data)
-    
+
     @action(detail=True, methods=['get'])
     def conversation_detail(self, request, pk=None):
-        """Get conversation with all messages and mark as read"""
+        """Get conversation with all messages and mark as read - only if owned by user"""
         try:
-            conversation = ChatConversation.objects.get(id=pk)
+            conversation = ChatConversation.objects.get(
+                id=pk,
+                user=request.user  # Only allow access to own conversations
+            )
 
             # Mark all assistant messages as read
             conversation.messages.filter(role='assistant', read=False).update(read=True)
@@ -290,9 +300,12 @@ class ChatViewSet(viewsets.ViewSet):
 
     @action(detail=True, methods=['delete'])
     def delete_conversation(self, request, pk=None):
-        """Delete a conversation"""
+        """Delete a conversation - only if owned by user"""
         try:
-            conversation = ChatConversation.objects.get(id=pk)
+            conversation = ChatConversation.objects.get(
+                id=pk,
+                user=request.user  # Only allow deleting own conversations
+            )
             conversation.delete()
             return Response({'message': 'Conversation deleted successfully'},
                            status=status.HTTP_204_NO_CONTENT)

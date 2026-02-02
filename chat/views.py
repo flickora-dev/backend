@@ -1,40 +1,60 @@
 from django.http import JsonResponse, StreamingHttpResponse
 from django.views.decorators.http import require_POST
 from django.utils import timezone
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
 import json
 from .models import ChatConversation, ChatMessage
+from .validators import sanitize_message, validate_message, check_prompt_injection
 from services.chat_service import ChatService
-from django.views.decorators.csrf import csrf_exempt
 import logging
 
-logger = logging.getLogger(__name__) 
+logger = logging.getLogger(__name__)
 
-@csrf_exempt
-@require_POST
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
 def chat_message(request):
     try:
-        data = json.loads(request.body)
-        message = data.get('message')
+        data = request.data
+        raw_message = data.get('message', '')
         movie_id = data.get('movie_id')
         conversation_id = data.get('conversation_id')
-        
-        if not message:
-            return JsonResponse({'error': 'Message is required'}, status=400)
-        
-        # Pobierz lub utwórz konwersację
+
+        # Validate message
+        is_valid, error_msg = validate_message(raw_message)
+        if not is_valid:
+            return JsonResponse({'error': error_msg}, status=400)
+
+        # Sanitize message
+        message = sanitize_message(raw_message)
+
+        # Check for prompt injection (log but don't block)
+        is_suspicious, matched_pattern = check_prompt_injection(message)
+        if is_suspicious:
+            logger.warning(
+                f"Potential prompt injection from user {request.user.id}: "
+                f"pattern='{matched_pattern}'"
+            )
+
+        # Get or create conversation (with user ownership check)
         if conversation_id:
             try:
-                conversation = ChatConversation.objects.get(id=conversation_id)
+                conversation = ChatConversation.objects.get(
+                    id=conversation_id,
+                    user=request.user
+                )
             except ChatConversation.DoesNotExist:
                 conversation = None
         else:
             conversation = None
-        
+
         if not conversation:
             conversation = ChatConversation.objects.create(
+                user=request.user,
                 conversation_type='movie' if movie_id else 'global',
                 movie_id=movie_id,
-                system_prompt_sent=False  # DODAJ
+                system_prompt_sent=False
             )
         
         # Zapisz wiadomość użytkownika
@@ -100,26 +120,43 @@ def chat_message(request):
         return JsonResponse({'error': str(e)}, status=500)
 
 
-@csrf_exempt
-@require_POST
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
 def chat_message_stream(request):
     """
     Streaming endpoint for chat messages
     Returns Server-Sent Events (SSE) for real-time response streaming
+    Requires authentication.
     """
     try:
-        data = json.loads(request.body)
-        message = data.get('message')
+        data = request.data
+        raw_message = data.get('message', '')
         movie_id = data.get('movie_id')
         conversation_id = data.get('conversation_id')
 
-        if not message:
-            return JsonResponse({'error': 'Message is required'}, status=400)
+        # Validate message
+        is_valid, error_msg = validate_message(raw_message)
+        if not is_valid:
+            return JsonResponse({'error': error_msg}, status=400)
 
-        # Get or create conversation
+        # Sanitize message
+        message = sanitize_message(raw_message)
+
+        # Check for prompt injection (log but don't block)
+        is_suspicious, matched_pattern = check_prompt_injection(message)
+        if is_suspicious:
+            logger.warning(
+                f"Potential prompt injection from user {request.user.id}: "
+                f"pattern='{matched_pattern}'"
+            )
+
+        # Get or create conversation (with user ownership check)
         if conversation_id:
             try:
-                conversation = ChatConversation.objects.get(id=conversation_id)
+                conversation = ChatConversation.objects.get(
+                    id=conversation_id,
+                    user=request.user
+                )
             except ChatConversation.DoesNotExist:
                 conversation = None
         else:
@@ -127,6 +164,7 @@ def chat_message_stream(request):
 
         if not conversation:
             conversation = ChatConversation.objects.create(
+                user=request.user,
                 conversation_type='movie' if movie_id else 'global',
                 movie_id=movie_id,
                 system_prompt_sent=False
