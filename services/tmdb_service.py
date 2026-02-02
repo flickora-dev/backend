@@ -85,3 +85,72 @@ class TMDBService:
         except requests.RequestException as e:
             logger.error(f"Error fetching top rated movies: {e}")
             return None
+
+    def get_trending_movies(self, time_window='week', page=1):
+        """Get trending movies (day or week)"""
+        try:
+            url = f"{self.base_url}/trending/movie/{time_window}"
+            params = {
+                'api_key': self.api_key,
+                'page': page
+            }
+            response = requests.get(url, params=params)
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
+            logger.error(f"Error fetching trending movies: {e}")
+            return None
+
+    def get_upcoming_movies(self, page=1):
+        """Get upcoming movies"""
+        try:
+            url = f"{self.base_url}/movie/upcoming"
+            params = {
+                'api_key': self.api_key,
+                'page': page
+            }
+            response = requests.get(url, params=params)
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
+            logger.error(f"Error fetching upcoming movies: {e}")
+            return None
+
+    def get_now_playing_movies(self, page=1):
+        """Get now playing movies in theaters"""
+        try:
+            url = f"{self.base_url}/movie/now_playing"
+            params = {
+                'api_key': self.api_key,
+                'page': page
+            }
+            response = requests.get(url, params=params)
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
+            logger.error(f"Error fetching now playing movies: {e}")
+            return None
+
+    def get_new_releases(self, days=7, page=1):
+        """Get movies released in the last N days"""
+        from datetime import datetime, timedelta
+
+        today = datetime.now().date()
+        start_date = today - timedelta(days=days)
+
+        try:
+            url = f"{self.base_url}/discover/movie"
+            params = {
+                'api_key': self.api_key,
+                'page': page,
+                'primary_release_date.gte': start_date.isoformat(),
+                'primary_release_date.lte': today.isoformat(),
+                'sort_by': 'primary_release_date.desc',
+                'vote_count.gte': 10  # Filter out obscure movies
+            }
+            response = requests.get(url, params=params)
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as e:
+            logger.error(f"Error fetching new releases: {e}")
+            return None

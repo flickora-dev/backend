@@ -5,8 +5,6 @@ from .viewsets import (GenreViewSet, MovieViewSet, MovieSectionViewSet, ChatView
 from .auth_views import (register, login, logout, update_profile, user_profile, delete_account)
 from . import views as legacy_views
 from . import chat_views
-# api/urls.py
-from django.urls import path
 from . import views
 
 
@@ -43,4 +41,5 @@ urlpatterns = [
     path('movie-status/<int:movie_id>/', legacy_views.movie_status, name='api_movie_status'),
     path('movie-sections/<int:movie_id>/', legacy_views.get_movie_sections, name='api_movie_sections'),
     path('movies-without-reports/', legacy_views.movies_without_reports, name='api_movies_without_reports'),
+
 ]

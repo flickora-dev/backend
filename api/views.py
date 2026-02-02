@@ -76,21 +76,57 @@ def generate_section(request):
         data = json.loads(request.body)
         movie_id = data.get('movie_id')
         section_type = data.get('section_type')
-        
+
         if not movie_id or not section_type:
             return JsonResponse({'error': 'movie_id and section_type required'}, status=400)
-        
+
+        movie = Movie.objects.get(id=movie_id)
         valid_types = [choice[0] for choice in MovieSection.SECTION_TYPES]
+
+        # Handle "all" to generate all section types
+        if section_type == 'all':
+            openrouter = OpenRouterService()
+            movie_data = {
+                'title': movie.title,
+                'year': movie.year,
+                'director': movie.director,
+                'genres': ', '.join([g.name for g in movie.genres.all()]),
+                'plot_summary': movie.plot_summary
+            }
+
+            created_sections = []
+            for stype in valid_types:
+                if MovieSection.objects.filter(movie=movie, section_type=stype).exists():
+                    continue
+
+                content = openrouter.generate_movie_section(movie_data, stype)
+                if content:
+                    section = MovieSection.objects.create(
+                        movie=movie,
+                        section_type=stype,
+                        content=content
+                    )
+                    created_sections.append({
+                        'id': section.id,
+                        'section_type': section.section_type,
+                        'word_count': section.word_count
+                    })
+
+            return JsonResponse({
+                'success': True,
+                'movie_id': movie.id,
+                'sections_created': len(created_sections),
+                'sections': created_sections
+            })
+
         if section_type not in valid_types:
             return JsonResponse({
-                'error': f'Invalid section_type. Valid types: {", ".join(valid_types)}'
+                'error': f'Invalid section_type. Valid types: {", ".join(valid_types)}, all'
             }, status=400)
-        
-        movie = Movie.objects.get(id=movie_id)
-        
+
         if MovieSection.objects.filter(movie=movie, section_type=section_type).exists():
             return JsonResponse({'error': 'Section already exists'}, status=400)
-        
+
         openrouter = OpenRouterService()
         movie_data = {
             'title': movie.title,
@@ -99,9 +135,9 @@ def generate_section(request):
             'genres': ', '.join([g.name for g in movie.genres.all()]),
             'plot_summary': movie.plot_summary
         }
-        
+
         content = openrouter.generate_movie_section(movie_data, section_type)
-        
+
         if not content:
             return JsonResponse({'error': 'Failed to generate content'}, status=500)
 
@@ -110,18 +146,18 @@ def generate_section(request):
             section_type=section_type,
             content=content
         )
-        
+
         return JsonResponse({
             'success': True,
             'section': {
                 'id': section.id,
                 'section_type': section.section_type,
                 'word_count': section.word_count,
-                'has_embedding': False,  # Zawsze False - generuj osobno przez /api/generate-embedding/
+                'has_embedding': False,
                 'movie_id': movie.id
             }
         })
-        
+
     except Movie.DoesNotExist:
         return JsonResponse({'error': 'Movie not found'}, status=404)
     except Exception as e:
@@ -137,25 +173,69 @@ def generate_embedding(request):
 
         data = json.loads(request.body)
         section_id = data.get('section_id')
+        movie_id = data.get('movie_id')
 
-        if not section_id:
-            return JsonResponse({'error': 'section_id required'}, status=400)
+        if not section_id and not movie_id:
+            return JsonResponse({'error': 'section_id or movie_id required'}, status=400)
 
+        mongodb = get_mongodb_service()
+        rag = RAGService()
+
+        # Handle movie_id - generate embeddings for all sections of the movie
+        if movie_id:
+            movie = Movie.objects.get(id=movie_id)
+            sections = MovieSection.objects.filter(movie=movie)
+
+            if not sections.exists():
+                return JsonResponse({'error': 'No sections found for this movie'}, status=404)
+
+            generated = []
+            skipped = []
+
+            for section in sections:
+                existing = mongodb.get_embedding(section.id)
+                if existing:
+                    skipped.append(section.id)
+                    continue
+
+                try:
+                    embedding = rag.generate_embedding(section.content)
+                    success = mongodb.store_embedding(
+                        section_id=section.id,
+                        movie_id=section.movie_id,
+                        section_type=section.section_type,
+                        embedding=embedding.tolist(),
+                        metadata={
+                            'movie_title': section.movie.title,
+                            'section_type_display': section.get_section_type_display(),
+                            'word_count': section.word_count,
+                            'content_preview': section.content[:200]
+                        }
+                    )
+                    if success:
+                        generated.append(section.id)
+                except Exception as e:
+                    logger.error(f"Error generating embedding for section {section.id}: {e}")
+
+            return JsonResponse({
+                'success': True,
+                'movie_id': movie_id,
+                'embeddings_generated': len(generated),
+                'embeddings_skipped': len(skipped),
+                'generated_section_ids': generated
+            })
+
+        # Handle single section_id
         section = MovieSection.objects.get(id=section_id)
 
-        # Check if embedding already exists in MongoDB
-        mongodb = get_mongodb_service()
         existing = mongodb.get_embedding(section_id)
         if existing:
             return JsonResponse({'error': 'Embedding already exists'}, status=400)
-
-        rag = RAGService()
 
         try:
             logger.info(f"Generating embedding for section {section_id}")
             embedding = rag.generate_embedding(section.content)
 
-            # Store embedding in MongoDB
             success = mongodb.store_embedding(
                 section_id=section.id,
                 movie_id=section.movie_id,
@@ -189,6 +269,8 @@ def generate_embedding(request):
                 'error': f'Embedding generation failed: {str(e)}'
             }, status=500)
 
+    except Movie.DoesNotExist:
+        return JsonResponse({'error': 'Movie not found'}, status=404)
     except MovieSection.DoesNotExist:
         return JsonResponse({'error': 'Section not found'}, status=404)
     except Exception as e:

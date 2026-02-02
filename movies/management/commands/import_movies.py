@@ -10,7 +10,12 @@ class Command(BaseCommand):
     def add_arguments(self, parser):
         parser.add_argument('--count', type=int, default=20)
         parser.add_argument('--popular', action='store_true', help='Import popular movies')
-        parser.add_argument('--top-rated', action='store_true', help='Import Top rated')
+        parser.add_argument('--top-rated', action='store_true', help='Import top rated movies')
+        parser.add_argument('--trending', action='store_true', help='Import trending movies this week')
+        parser.add_argument('--upcoming', action='store_true', help='Import upcoming movies')
+        parser.add_argument('--now-playing', action='store_true', help='Import now playing in theaters')
+        parser.add_argument('--new-releases', action='store_true', help='Import movies released in the last 7 days')
+        parser.add_argument('--days', type=int, default=7, help='Number of days to look back for new releases')
         
     def handle(self, *args, **options):
         tmdb = TMDBService()
@@ -23,10 +28,18 @@ class Command(BaseCommand):
 
         while imported_count < target_count:
             # Fetch movies for current page
-            if options['popular']:
-                movies_data = tmdb.get_popular_movies(page=page)
+            if options['new_releases']:
+                movies_data = tmdb.get_new_releases(days=options['days'], page=page)
+            elif options['trending']:
+                movies_data = tmdb.get_trending_movies(page=page)
+            elif options['upcoming']:
+                movies_data = tmdb.get_upcoming_movies(page=page)
+            elif options['now_playing']:
+                movies_data = tmdb.get_now_playing_movies(page=page)
             elif options['top_rated']:
                 movies_data = tmdb.get_top_rated_movies(page=page)
+            elif options['popular']:
+                movies_data = tmdb.get_popular_movies(page=page)
             else:
                 movies_data = tmdb.get_popular_movies(page=page)
 
