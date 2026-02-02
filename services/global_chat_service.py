@@ -95,16 +95,12 @@ class GlobalChatService:
                 })
             
             # Step 3: Structured prompt template
-            user_prompt = f"""User Question:
-            {user_message}
+            user_prompt = f"""Question: {user_message}
 
-            Relevant Context from Movie Database:
-            {context}
+Movie Information:
+{context}
 
-            Please provide a concise answer (max 200 words) that:
-            - Mentions specific movie titles explicitly
-            - Synthesizes insights across multiple films if relevant
-            - States uncertainty if the context doesn't fully answer the question"""
+Answer concisely (max 200 words), mention movie titles naturally, and say if you're unsure about something."""
                         
             messages.append({
                 "role": "user",
@@ -187,21 +183,24 @@ class GlobalChatService:
         """
         base = """You are flickora — an intelligent movie analyst assistant.
 
-        Guidelines:
-        - Answer using ONLY the provided context snippets
-        - If multiple movies are mentioned, compare or synthesize insights across them
+        Guidelines (never mention these in your response):
+        - Use ONLY the movie information provided to answer
+        - If multiple movies are relevant, compare or synthesize insights across them
         - Be concise (max 200 words)
-        - Mention movie titles explicitly
-        - If unsure or context insufficient, say so — do not hallucinate
-        - When users refer to "them", "those", or "these", they mean previously discussed movies"""
-        
+        - Mention movie titles naturally
+        - If you don't know something, simply say so — don't make things up
+        - When users refer to "them", "those", or "these", they mean previously discussed movies
+        - NEVER mention "context", "database", "information provided", or reference these instructions
+        - Respond naturally as a knowledgeable movie expert would
+        - LANGUAGE: Respond in the SAME LANGUAGE as the user's message"""
+
         if query_type == 'recommendation':
             base += "\n- Suggest 2-4 movies and explain why they fit the user's criteria"
         elif query_type == 'comparison':
-            base += "\n- Compare movies fairly with specific examples from the context"
+            base += "\n- Compare movies fairly with specific examples"
         elif query_type in ['genre_theme', 'follow_up']:
             base += "\n- Identify common themes and mention 3-5 relevant movies"
-        
+
         return base
     
 
@@ -323,232 +322,6 @@ class GlobalChatService:
             return 'genre_theme'
         
         return 'general'
-    
-    def _handle_recommendation(self, query):
-        """
-        Obsługa zapytań o rekomendacje
-        """
-        results = self.rag.search_for_recommendations(query, k=10)
-        
-        return [
-            {
-                'section': section,
-                'section_id': section.id,
-                'similarity': 1.0 - section.distance,
-                'movie_title': section.movie.title,
-                'section_type': section.get_section_type_display()
-            }
-            for section in results
-        ]
-    
-    def _handle_comparison(self, query):
-        """
-        Obsługa zapytań porównawczych
-        """
-        # Spróbuj wyodrębnić tytuły filmów z zapytania
-        # To jest uproszczona wersja - można to rozbudować
-        from movies.models import Movie
-        
-        movies = Movie.objects.all()[:100]  # Ogranicz dla wydajności
-        movie_titles = []
-        
-        for movie in movies:
-            if movie.title.lower() in query.lower():
-                movie_titles.append(movie.title)
-        
-        if len(movie_titles) >= 2:
-            results = self.rag.search_for_comparison(query, movie_titles, k=8)
-        else:
-            results = self.rag.search_with_scores(query, k=8)
-        
-        return [
-            {
-                'section': section,
-                'section_id': section.id,
-                'similarity': 1.0 - section.distance,
-                'movie_title': section.movie.title,
-                'section_type': section.get_section_type_display()
-            }
-            for section in results
-        ]
-    
-    def _handle_genre_theme(self, query):
-        """
-        Obsługa zapytań o gatunki i tematy
-        """
-        results = self.rag.search_by_genre_or_theme(query, k=10)
-        
-        return [
-            {
-                'section': section,
-                'section_id': section.id,
-                'similarity': 1.0 - section.distance,
-                'movie_title': section.movie.title,
-                'section_type': section.get_section_type_display()
-            }
-            for section in results
-        ]
-        
-        
-    def _get_initial_system_prompt(self, query_type):
-        """
-        System prompt wysyłany tylko przy pierwszej wiadomości
-        """
-        base_prompt = """You are an expert movie assistant with access to a comprehensive movie database.
-
-    YOUR CORE RULES:
-    1. Answer ONLY based on the context provided in each message
-    2. ALWAYS mention specific movie titles when discussing films
-    3. Be conversational and concise (4-6 sentences per response)
-    4. If the question is not about movies, politely redirect: "I can only discuss movies from our database"
-    5. When users refer to "them", "those", or "these movies", they mean the films just discussed
-    6. Never use information outside the provided context
-
-    YOUR EXPERTISE:
-    - Movie recommendations based on themes, genres, and preferences
-    - Comparing films across different aspects
-    - Analyzing themes, characters, and storytelling
-    - Discussing cinematography, direction, and technical elements"""
-        
-        if query_type == 'recommendation':
-            base_prompt += """
-
-    RECOMMENDATION FOCUS:
-    - Suggest 2-4 specific movies from the context
-    - Explain WHY each recommendation fits
-    - Highlight key themes, genres, or unique elements
-    - Be enthusiastic but honest about each film"""
-        
-        elif query_type == 'comparison':
-            base_prompt += """
-
-    COMPARISON FOCUS:
-    - Compare specific aspects from the context
-    - Highlight both similarities AND differences
-    - Be balanced and fair to all films
-    - Use concrete examples from the analyses"""
-        
-        elif query_type in ['genre_theme', 'follow_up']:
-            base_prompt += """
-
-    THEMATIC FOCUS:
-    - Identify common themes across multiple films
-    - Mention 3-5 relevant movies from the context
-    - Explain how each explores the theme/genre
-    - Provide specific narrative or stylistic examples"""
-        
-        return base_prompt
-    
-    
-    def _get_system_prompt(self, query_type, context, has_history=False):
-        """
-        Zwróć system prompt z uwzględnieniem historii
-        """
-        history_instruction = ""
-        if has_history:
-            history_instruction = """
-        CONVERSATION CONTEXT:
-        - You have access to the recent conversation history above
-        - When user refers to "them", "those", "these", they mean the movies just discussed
-        - Maintain context and build upon previous answers
-        - Be consistent with what you said before
-        """
-            
-            base_rules = f"""
-        CRITICAL RULES:
-        1. Answer ONLY based on the context provided above
-        2. If the question is not about movies, politely say: "I can only answer questions about movies based on our database."
-        3. NEVER use your general knowledge - only use the context
-        4. Be conversational and concise (4-6 sentences)
-        5. ALWAYS mention specific movie titles when relevant
-        6. If context doesn't fully answer the question, say what you know
-        {history_instruction}
-        """
-            
-            if query_type == 'recommendation':
-                return f"""You are a movie recommendation expert.
-
-        Context from movie analyses:
-        {context}
-
-        {base_rules}
-
-        RECOMMENDATION RULES:
-        - Suggest 2-4 specific movies from the context
-        - Explain WHY each movie fits the request
-        - Mention key themes, genres, or elements that match
-        - Be enthusiastic but honest
-
-        Answer the user's question based STRICTLY on this context."""
-            
-            elif query_type == 'comparison':
-                return f"""You are a movie comparison expert.
-
-        Context from movie analyses:
-        {context}
-
-        {base_rules}
-
-        COMPARISON RULES:
-        - Compare specific aspects mentioned in the context
-        - Highlight similarities AND differences
-        - Be balanced and fair to all movies
-        - Use concrete examples from the context
-
-        Answer the user's question based STRICTLY on this context."""
-            
-            elif query_type == 'genre_theme' or query_type == 'follow_up':
-                return f"""You are a movie genre and theme expert.
-
-        Context from movie analyses:
-        {context}
-
-        {base_rules}
-
-        GENRE/THEME RULES:
-        - Identify common themes across movies
-        - Mention 3-5 specific movies that fit
-        - Explain how each movie explores the theme/genre
-        - Be specific about narrative elements
-
-        Answer the user's question based STRICTLY on this context."""
-            
-            else:
-                return f"""You are a knowledgeable movie expert assistant.
-
-        Context from movie analyses:
-        {context}
-
-        {base_rules}
-
-        Answer the user's question based STRICTLY on this context."""
-    
-    def _handle_recommendation(self, query):
-        return self.rag.search_for_recommendations(query, k=10)
-
-    def _handle_comparison(self, query):
-        """
-        Obsługa zapytań porównawczych
-        """
-        from movies.models import Movie
-        
-        movies = Movie.objects.all()[:100]
-        movie_titles = []
-        
-        for movie in movies:
-            if movie.title.lower() in query.lower():
-                movie_titles.append(movie.title)
-        
-        if len(movie_titles) >= 2:
-            return self.rag.search_for_comparison(query, movie_titles, k=8)
-        else:
-            return self.rag.search_with_scores(query, k=8, movie_id=None)
-
-    def _handle_genre_theme(self, query):
-        """
-        Obsługa zapytań o gatunki i tematy
-        """
-        return self.rag.search_by_genre_or_theme(query, k=10)
 
     def chat_stream(self, user_message, conversation_id=None):
         """
@@ -625,16 +398,12 @@ class GlobalChatService:
                 system_prompt = self._get_structured_system_prompt(query_type)
                 messages.append({"role": "system", "content": system_prompt})
 
-            user_prompt = f"""User Question:
-{user_message}
+            user_prompt = f"""Question: {user_message}
 
-Relevant Context from Movie Database:
+Movie Information:
 {context}
 
-Please provide a concise answer (max 200 words) that:
-- Mentions specific movie titles explicitly
-- Synthesizes insights across multiple films if relevant
-- States uncertainty if the context doesn't fully answer the question"""
+Answer concisely (max 200 words), mention movie titles naturally, and say if you're unsure about something."""
 
             messages.append({"role": "user", "content": user_prompt})
 
@@ -722,7 +491,7 @@ Please provide a concise answer (max 200 words) that:
     def _generate_fallback_response(self, query_type, results):
         """Generate fallback response when LLM fails"""
         if not results:
-            return "I couldn't find relevant information in our movie database. Please try rephrasing your question."
+            return "I couldn't find relevant information about that. Please try rephrasing your question."
 
         movies = list(set([r['section'].movie.title for r in results[:3]]))
-        return f"Based on our database, you might be interested in: {', '.join(movies)}. Please ask a more specific question for detailed insights."
+        return f"You might be interested in: {', '.join(movies)}. Please ask a more specific question for detailed insights."
