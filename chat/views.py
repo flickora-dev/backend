@@ -1,12 +1,13 @@
 from django.http import JsonResponse, StreamingHttpResponse
 from django.views.decorators.http import require_POST
 from django.utils import timezone
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.permissions import IsAuthenticated
 import json
 from .models import ChatConversation, ChatMessage
 from .validators import sanitize_message, validate_message, check_prompt_injection
 from services.chat_service import ChatService
+from api.throttling import ChatRateThrottle
 import logging
 
 logger = logging.getLogger(__name__)
@@ -14,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([ChatRateThrottle])
 def chat_message(request):
     try:
         data = request.data
@@ -122,6 +124,7 @@ def chat_message(request):
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
+@throttle_classes([ChatRateThrottle])
 def chat_message_stream(request):
     """
     Streaming endpoint for chat messages

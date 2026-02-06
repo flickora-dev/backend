@@ -115,7 +115,10 @@ else:
 
 AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.UserAttributeSimilarityValidator"},
-    {"NAME": "django.contrib.auth.password_validation.MinimumLengthValidator"},
+    {
+        "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
+        "OPTIONS": {"min_length": 8},
+    },
     {"NAME": "django.contrib.auth.password_validation.CommonPasswordValidator"},
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
@@ -156,6 +159,16 @@ REST_FRAMEWORK = {
     "PAGE_SIZE": 20,
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
     "DEFAULT_SCHEMA_CLASS": "rest_framework.schemas.coreapi.AutoSchema",
+    "DEFAULT_THROTTLE_CLASSES": [
+        "rest_framework.throttling.AnonRateThrottle",
+        "rest_framework.throttling.UserRateThrottle",
+    ],
+    "DEFAULT_THROTTLE_RATES": {
+        "anon": "30/minute",      # Anonymous users: 30 requests/min
+        "user": "120/minute",     # Authenticated users: 120 requests/min
+        "chat": "20/minute",      # Chat endpoints: 20 requests/min
+        "auth": "5/minute",       # Auth endpoints: 5 requests/min (brute force protection)
+    },
 }
 
 # Swagger/OpenAPI Settings
@@ -188,4 +201,24 @@ LOGGING = {
     "loggers": {
         "django": {"handlers": ["console"], "level": os.getenv("DJANGO_LOG_LEVEL", "INFO"), "propagate": False},
     },
+}
+
+# Cache configuration
+CACHES = {
+    "default": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        "LOCATION": "unique-snowflake",
+        "TIMEOUT": 300,  # 5 minutes default
+        "OPTIONS": {
+            "MAX_ENTRIES": 1000,
+        },
+    }
+}
+
+# Cache timeouts for different data types (in seconds)
+CACHE_TIMEOUTS = {
+    "tmdb_movie": 3600,       # 1 hour for TMDB movie data
+    "tmdb_similar": 3600,     # 1 hour for similar movies
+    "movie_sections": 1800,   # 30 min for movie sections
+    "genres": 86400,          # 24 hours for genres (rarely change)
 }

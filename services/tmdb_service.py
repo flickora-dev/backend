@@ -1,17 +1,28 @@
 import requests
 from django.conf import settings
+from django.core.cache import cache
 import logging
 
 logger = logging.getLogger(__name__)
+
+# Cache timeouts (in seconds)
+CACHE_TIMEOUT_MOVIE = getattr(settings, 'CACHE_TIMEOUTS', {}).get('tmdb_movie', 3600)
+CACHE_TIMEOUT_SIMILAR = getattr(settings, 'CACHE_TIMEOUTS', {}).get('tmdb_similar', 3600)
+
 
 class TMDBService:
     def __init__(self):
         self.api_key = settings.TMDB_API_KEY
         self.base_url = "https://api.themoviedb.org/3"
         self.image_base_url = "https://image.tmdb.org/t/p/w500"
-    
+
     def get_movie_details(self, tmdb_id):
-        """Get detailed movie information from TMDB"""
+        """Get detailed movie information from TMDB (cached)"""
+        cache_key = f"tmdb_movie_{tmdb_id}"
+        cached_data = cache.get(cache_key)
+        if cached_data:
+            return cached_data
+
         try:
             url = f"{self.base_url}/movie/{tmdb_id}"
             params = {
@@ -20,13 +31,20 @@ class TMDBService:
             }
             response = requests.get(url, params=params)
             response.raise_for_status()
-            return response.json()
+            data = response.json()
+            cache.set(cache_key, data, CACHE_TIMEOUT_MOVIE)
+            return data
         except requests.RequestException as e:
             logger.error(f"Error fetching movie {tmdb_id}: {e}")
             return None
-    
+
     def get_similar_movies(self, tmdb_id):
-        """Get similar movies from TMDB"""
+        """Get similar movies from TMDB (cached)"""
+        cache_key = f"tmdb_similar_{tmdb_id}"
+        cached_data = cache.get(cache_key)
+        if cached_data:
+            return cached_data
+
         try:
             url = f"{self.base_url}/movie/{tmdb_id}/similar"
             params = {
@@ -35,7 +53,9 @@ class TMDBService:
             }
             response = requests.get(url, params=params)
             response.raise_for_status()
-            return response.json()
+            data = response.json()
+            cache.set(cache_key, data, CACHE_TIMEOUT_SIMILAR)
+            return data
         except requests.RequestException as e:
             logger.error(f"Error fetching similar movies for {tmdb_id}: {e}")
             return None

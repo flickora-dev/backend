@@ -273,7 +273,7 @@ class ChatViewSet(viewsets.ViewSet):
         """Get user's chat conversations - only returns conversations owned by the user"""
         conversations = ChatConversation.objects.filter(
             user=request.user
-        ).order_by('-updated_at')[:20]
+        ).select_related('movie').prefetch_related('messages').order_by('-updated_at')[:20]
         serializer = ChatConversationSerializer(conversations, many=True)
         return Response(serializer.data)
 
@@ -281,7 +281,7 @@ class ChatViewSet(viewsets.ViewSet):
     def conversation_detail(self, request, pk=None):
         """Get conversation with all messages and mark as read - only if owned by user"""
         try:
-            conversation = ChatConversation.objects.get(
+            conversation = ChatConversation.objects.select_related('movie').prefetch_related('messages').get(
                 id=pk,
                 user=request.user  # Only allow access to own conversations
             )

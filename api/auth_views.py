@@ -1,5 +1,5 @@
 from rest_framework import status
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, throttle_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework_simplejwt.tokens import RefreshToken
@@ -7,12 +7,14 @@ from django.contrib.auth import authenticate
 import logging
 
 from movies.serializers import UserSerializer, RegisterSerializer
+from .throttling import AuthRateThrottle
 
 logger = logging.getLogger(__name__)
 
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
+@throttle_classes([AuthRateThrottle])
 def register(request):
     """Register a new user"""
     serializer = RegisterSerializer(data=request.data)
@@ -35,6 +37,7 @@ def register(request):
 
 @api_view(['POST'])
 @permission_classes([AllowAny])
+@throttle_classes([AuthRateThrottle])
 def login(request):
     """Login user and return JWT tokens"""
     username = request.data.get('username')
