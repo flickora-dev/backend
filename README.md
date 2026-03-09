@@ -8,7 +8,8 @@ Backend REST API platformy Flickora do odkrywania filmów z AI. Zbudowany na Dja
 - **PostgreSQL** + pgvector
 - **MongoDB Atlas** — embeddingi wektorowe
 - **PyTorch + sentence-transformers** — model `all-MiniLM-L6-v2`
-- **OpenRouter** — LLM do czatu (AI)
+- **OpenRouter** — LLM do czatu (API w chmurze)
+- **Ollama** — lokalny LLM do czatu (opcjonalnie, zamiast OpenRouter)
 - **TMDB API** — metadane filmów
 - **Gunicorn** — serwer WSGI
 - JWT (djangorestframework-simplejwt)
@@ -32,6 +33,10 @@ MONGODB_URL=twoj-url-mongodb-atlas
 MONGODB_DATABASE=flickora
 ALLOWED_HOSTS=localhost,127.0.0.1
 CORS_ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000
+
+# Opcjonalnie — lokalny LLM zamiast OpenRouter
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=mistral
 ```
 
 ```bash
@@ -58,7 +63,9 @@ docker run -d -p 8000:8000 --env-file .env flickora-backend \
 | `DEBUG` | Nie | `True` dla devu, `False` dla produkcji |
 | `DATABASE_URL` | Nie | URL PostgreSQL. Jeśli brak — używa SQLite |
 | `TMDB_API_KEY` | Tak | Klucz API The Movie Database |
-| `OPENROUTER_API_KEY` | Tak | Klucz API OpenRouter (LLM) |
+| `OPENROUTER_API_KEY` | Tak | Klucz API OpenRouter (LLM w chmurze) |
+| `OLLAMA_BASE_URL` | Nie | URL lokalnego Ollama (domyślnie: `http://localhost:11434`) |
+| `OLLAMA_MODEL` | Nie | Model Ollama (domyślnie: `mistral`) |
 | `MONGODB_URL` | Tak | Connection string MongoDB Atlas |
 | `MONGODB_DATABASE` | Nie | Nazwa bazy danych (domyślnie: `flickora`) |
 | `ALLOWED_HOSTS` | Nie | Hosty oddzielone przecinkiem |
