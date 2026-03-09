@@ -1,7 +1,6 @@
 from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
 from django.views.decorators.csrf import csrf_exempt
-from django.db import models
 from movies.models import Movie, Genre
 from reports.models import MovieSection
 from services.tmdb_service import TMDBService
@@ -9,7 +8,6 @@ from services.openrouter_service import OpenRouterService
 from services.rag_service import RAGService
 import json
 import logging
-from django.http import JsonResponse
 
 def health(request):
     return JsonResponse({"status": "ok"})

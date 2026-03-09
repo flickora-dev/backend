@@ -87,16 +87,12 @@ WSGI_APPLICATION = "flickora.wsgi.application"
 # Database - Fix Railway's malformed DATABASE_URL
 database_url = os.getenv("DATABASE_URL", "")
 
-# Debug: print what Railway gives us
-print(f"DEBUG: Original DATABASE_URL = {database_url[:50]}...")
-
 if database_url:
     # Railway bug: prefix "railway" to URL
     # From: railwaypostgresql://...
     # To: postgresql://...
     if database_url.startswith("railway"):
         database_url = database_url[7:]  # Remove 'railway' prefix
-        print(f"DEBUG: Fixed DATABASE_URL = {database_url[:50]}...")
     
     DATABASES = {
         "default": dj_database_url.parse(

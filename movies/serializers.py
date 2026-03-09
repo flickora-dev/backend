@@ -5,9 +5,11 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from .models import Movie, Genre, MovieView, MovieFavorite
 
 class GenreSerializer(serializers.ModelSerializer):
+    movie_count = serializers.IntegerField(read_only=True, default=0)
+
     class Meta:
         model = Genre
-        fields = ['id', 'tmdb_id', 'name']
+        fields = ['id', 'tmdb_id', 'name', 'movie_count']
         
         
 class MovieListSerializer(serializers.ModelSerializer):
